@@ -1,0 +1,6 @@
+name=Blockdude
+author=Willems Davy aka Joyrider3774
+description=Pick up blocks to reach the exit door puzzle game
+bundleID=com.joyrider3774.blockdude.embedded
+version=1.0
+buildNumber=1
