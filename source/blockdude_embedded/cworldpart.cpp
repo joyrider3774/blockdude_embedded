@@ -6,18 +6,43 @@
 #include "sound.h"
 #include "gamefuncs.h"
 
-//Parts come out of one fixed pool instead of malloc. That drops the 8 bytes of
+//Parts come out of one pool instead of a malloc each. That drops the 8 bytes of
 //heap overhead every single part would otherwise cost and it can not fragment the
 //heap. A free slot is marked by Type 0, no real part ever has that id (1..26).
 //The busiest bundled level needs 340 parts; when the pool is full this returns
-//NULL and CWorldParts_Add drops the part instead of taking the board down
-CWorldPart WorldPartPool[MAXWORLDPARTS];
+//NULL and CWorldParts_Add drops the part instead of taking the board down.
+//The pool itself is allocated with the board (CWorldParts_Create) and not reserved
+//as a global, so nothing that runs instead of the game (the web app store) pays for it
+CWorldPart* WorldPartPool = NULL;
 //the pool is searched from WorldPartPoolNext onwards, so an index reaches MAXWORLDPARTS * 2
 static_assert(MAXWORLDPARTS * 2 <= 65535, "pool indexes do not fit in uint16_t");
 static uint16_t WorldPartPoolNext = 0;
 
+bool CWorldPart_PoolInit()
+{
+	if (WorldPartPool)
+		return true;
+	WorldPartPool = (CWorldPart*)malloc(MAXWORLDPARTS * sizeof(CWorldPart));
+	if (!WorldPartPool)
+		return false;
+	for (uint16_t Teller = 0; Teller < MAXWORLDPARTS; Teller++)
+		WorldPartPool[Teller].Type = 0;
+	WorldPartPoolNext = 0;
+	return true;
+}
+
+void CWorldPart_PoolDeinit()
+{
+	free(WorldPartPool);
+	WorldPartPool = NULL;
+	WorldPartPoolNext = 0;
+}
+
 static CWorldPart* CWorldPart_PoolAlloc()
 {
+	//the pool could not be allocated, every part is dropped
+	if (!WorldPartPool)
+		return NULL;
 	for (uint16_t Teller = 0; Teller < MAXWORLDPARTS; Teller++)
 	{
 		//start looking where the last one was taken, loading a whole level stays

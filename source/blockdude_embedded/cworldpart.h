@@ -41,8 +41,9 @@ struct CWorldPart {
 	bool NeedToMoveRight;
 };
 
-//every part lives in this pool, the positional grid in CWorldParts keeps its index
-extern CWorldPart WorldPartPool[MAXWORLDPARTS];
+//every part lives in this pool (MAXWORLDPARTS parts), the positional grid in CWorldParts keeps its index.
+//It is NULL until CWorldPart_PoolInit, CWorldParts_Create and CWorldParts_deinit take care of it
+extern CWorldPart* WorldPartPool;
 //an empty cell of the positional grid
 #define NoWorldPart 0xFFFF
 static_assert(MAXWORLDPARTS <= NoWorldPart, "pool indexes collide with NoWorldPart");
@@ -51,6 +52,8 @@ static inline uint16_t CWorldPart_PoolIndex(const CWorldPart* WorldPart)
 	return (uint16_t)(WorldPart - WorldPartPool);
 }
 
+bool CWorldPart_PoolInit();
+void CWorldPart_PoolDeinit();
 void CWorldPart_free(CWorldPart* WorldPart);
 CWorldPart* CWorldPart_create(const int8_t PlayFieldXin, const int8_t PlayFieldYin, const uint8_t Typein, const uint8_t GroupIn);
 void CWorldPart_MoveQueClear(CWorldPart* self);

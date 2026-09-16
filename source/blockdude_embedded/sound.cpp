@@ -1,21 +1,21 @@
 #include <stdint.h>
-#include <string.h>
 #include "sound.h"
 #include "commonvars.h"
 
 
 uint8_t music_note, music_tempo, music_loop, music_on, sound_on;
 uint8_t selecting_music;
-uint16_t musicArray[255];
+//The selected tune is played straight from flash, nothing is copied into memory
+static const uint16_t* musicTune = NULL;
+//number of values in musicTune
 uint8_t music_length;
-//number of values in musicArray, kept in the uint8_t music_length
-static_assert(sizeof(musicArray) / sizeof(musicArray[0]) <= 255, "music_length does not fit in uint8_t");
 
 const float sfxSustain = (100.0f * 30.0f / 18.0f);
-const float musModifier = (60.0f / 30.0f);
+//constexpr, the tunes below are in flash and must be computed while compiling
+constexpr float musModifier = (60.0f / 30.0f);
 
 // Winner
-const uint16_t music_winner[] = {
+const uint16_t music_winner[] PLATFORM_PROGMEM = {
     523,  (uint16_t)(100.0f / musModifier),
     659,  (uint16_t)(100.0f / musModifier),
     783,  (uint16_t)(100.0f / musModifier),
@@ -25,7 +25,7 @@ const uint16_t music_winner[] = {
 };
 
 //clear
-const uint16_t music_clear[] = {
+const uint16_t music_clear[] PLATFORM_PROGMEM = {
     523,  (uint16_t)(100.0f / musModifier),  // C5
     659,  (uint16_t)(100.0f / musModifier),  // E5
     784,  (uint16_t)(100.0f / musModifier),  // G5
@@ -35,23 +35,23 @@ const uint16_t music_clear[] = {
 };
 
 // Pickup box (quick ascending blip)
-const uint16_t music_pickup[] = {
+const uint16_t music_pickup[] PLATFORM_PROGMEM = {
     880,  (uint16_t)(60.0f / musModifier),   // A5
     1174, (uint16_t)(80.0f / musModifier),   // D6
     0, 0
 };
 
 // Drop box (short descending thud)
-const uint16_t music_drop[] = {
+const uint16_t music_drop[] PLATFORM_PROGMEM = {
     659,  (uint16_t)(70.0f / musModifier),   // E5
     494,  (uint16_t)(90.0f / musModifier),   // B4
     0, 0
 };
 
-//a tune is copied into musicArray (255 values) and its length kept in the uint8_t music_length,
-//at most 254 values keeps music_note (stepping 2 at a time past the end) from wrapping
+//the length of a tune is kept in the uint8_t music_length, at most 254 values keeps
+//music_note (stepping 2 at a time past the end) from wrapping
 #define TUNELEN(t) (sizeof(t) / sizeof(uint16_t))
-static_assert((TUNELEN(music_winner) <= 254) && (TUNELEN(music_clear) <= 254) && (TUNELEN(music_pickup) <= 254) && (TUNELEN(music_drop) <= 254), "a tune does not fit in musicArray");
+static_assert((TUNELEN(music_winner) <= 254) && (TUNELEN(music_clear) <= 254) && (TUNELEN(music_pickup) <= 254) && (TUNELEN(music_drop) <= 254), "a tune does not fit in music_length");
 
 void stopMusic(void)
 {
@@ -89,26 +89,28 @@ void deInitSound(void)
 void SelectMusic(uint8_t musicFile, uint8_t loop)
 {
     selecting_music = 1;
-    memset(musicArray, 0, sizeof(musicArray));
     switch (musicFile) 
     {			
         case musWinner:
-            memcpy(musicArray, music_winner, sizeof(music_winner));
-            music_length = sizeof(music_winner) / sizeof(uint16_t);
+            musicTune = music_winner;
+            music_length = TUNELEN(music_winner);
             break;
         case musClear:
-            memcpy(musicArray, music_clear, sizeof(music_clear));
-            music_length = sizeof(music_clear) / sizeof(uint16_t);
+            musicTune = music_clear;
+            music_length = TUNELEN(music_clear);
             break;
         case musPickup:
-            memcpy(musicArray, music_pickup, sizeof(music_pickup));
-            music_length = sizeof(music_pickup) / sizeof(uint16_t);
+            musicTune = music_pickup;
+            music_length = TUNELEN(music_pickup);
             break;
         case musDrop:
-            memcpy(musicArray, music_drop, sizeof(music_drop));
-            music_length = sizeof(music_drop) / sizeof(uint16_t);
+            musicTune = music_drop;
+            music_length = TUNELEN(music_drop);
             break;
         default:
+            //an unknown tune plays nothing
+            musicTune = NULL;
+            music_length = 0;
             break;
     }
     music_note = 0;
@@ -122,12 +124,13 @@ void playNote()
 {    
     if(music_note < music_length)
     {
-        Platform_PlayTone(musicArray[music_note], 0);
+        //the tune is in flash, so every value is read through PLATFORM_READ_WORD
+        Platform_PlayTone(PLATFORM_READ_WORD(musicTune + music_note), 0);
 
         //Set the new delay to wait
         //the note length is in ms, the tempo counts frames. Written as 60/FRAMERATE it divided by
         //zero once the frame rate went above 60
-        uint32_t frames = (uint32_t)musicArray[music_note + 1] * FRAMERATE / 1000;
+        uint32_t frames = (uint32_t)PLATFORM_READ_WORD(musicTune + music_note + 1) * FRAMERATE / 1000;
         music_tempo = (frames > 255) ? 255 : (uint8_t)frames;
 
         //Skip to the next note
@@ -173,6 +176,7 @@ void musicTimer()
 void initMusic()
 {
 	music_note = 0;
+	musicTune = NULL;
 	music_length = 0;
 	music_tempo = 0;
 	music_loop = 0;

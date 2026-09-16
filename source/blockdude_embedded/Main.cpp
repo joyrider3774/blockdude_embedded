@@ -18,6 +18,7 @@ const uint32_t timePerFrame =  1000000 / FRAMERATE;
 static float frameRate = 0;
 static uint32_t currentTime = 0, lastTime = 0, frameTime = 0;
 static bool endFrame = true;
+bool webAppStore = false;
 static bool debugMode = false;
 
 static uint32_t getFreeRam() {
@@ -90,77 +91,99 @@ static void resetGlobals()
 
 void Game_Setup(void)
 {
+    //webAppStore is set in Platform_Init
 	Platform_Init("Blockdude v1.0");
-	resetGlobals();
-    GameState = GSIntroInit;
-    initSaveState();
-    initSound();
-    initMusic();
-    setMusicOn(isMusicOnSaveState());
-    setSoundOn(isSoundOnSaveState());
-    LoadGraphics();
-    //with a 1 bpp buffer, the colours its set and clear bits are shown in. The skin is
-    //always black & white there
-    Platform_SetBufferColors(ColorWhite, ColorBlack);
-    LoadFonts();
-    WorldParts = CWorldParts_Create();
-    Platform_Log("Size of WorldParts %u\n", (unsigned)sizeof(CWorldParts));
-    if(WorldParts == NULL)
-        Platform_Log("WorldParts = NULL\n");
-    trackLowestFreeRam();
-    currentTime = Platform_Micros();
-    lastTime = 0;
+    if(!webAppStore)
+    {
+        Platform_Log("Free Ram at boot game: %6" PRIu32 "\n", getFreeRam());
+    	resetGlobals();
+        GameState = GSIntroInit;
+        initSaveState();
+        initSound();
+        initMusic();
+        setMusicOn(isMusicOnSaveState());
+        setSoundOn(isSoundOnSaveState());
+        LoadGraphics();
+        //with a 1 bpp buffer, the colours its set and clear bits are shown in. The skin is
+        //always black & white there
+        Platform_SetBufferColors(ColorWhite, ColorBlack);
+        LoadFonts();
+        WorldParts = CWorldParts_Create();
+        Platform_Log("Size of WorldParts %u\n", (unsigned)sizeof(CWorldParts));
+        if(WorldParts == NULL)
+            Platform_Log("WorldParts = NULL\n");
+        trackLowestFreeRam();
+        currentTime = Platform_Micros();
+        lastTime = 0;
+    }
+    else
+    {
+        //webappstore stuff
+    }
 }
 
 void Game_Loop(void)
 {
-    currentTime = Platform_Micros();
-    frameTime  = currentTime - lastTime;
-#if FPSLOCK
-    if((frameTime < timePerFrame) || !endFrame)
-       return;
-#else
-    //no lock, a frame starts as soon as the last one is done
-    if(!endFrame)
-       return;
-#endif
-    endFrame = false;
-    //without the lock two frames can start within the same microsecond on a fast PC
-    frameRate = 1000000.0 / (frameTime ? frameTime : 1);
-    lastTime = currentTime;
-    processSound();
-    prevButtons = currButtons;
-    currButtons = Platform_GetButtons();
+    if(!webAppStore)
+    {        
+        currentTime = Platform_Micros();
+        frameTime  = currentTime - lastTime;
+    #if FPSLOCK
+        if((frameTime < timePerFrame) || !endFrame)
+           return;
+    #else
+        //no lock, a frame starts as soon as the last one is done
+        if(!endFrame)
+           return;
+    #endif
+        endFrame = false;
+        //without the lock two frames can start within the same microsecond on a fast PC
+        frameRate = 1000000.0 / (frameTime ? frameTime : 1);
+        lastTime = currentTime;
+        processSound();
+        prevButtons = currButtons;
+        currButtons = Platform_GetButtons();
 
-    if((currButtons & BUTTON_UP) && (currButtons & BUTTON_DOWN) && !(prevButtons & BUTTON_DOWN))
-        debugMode = !debugMode;
+        if((currButtons & BUTTON_UP) && (currButtons & BUTTON_DOWN) && !(prevButtons & BUTTON_DOWN))
+            debugMode = !debugMode;
 
-    //gamestate handling
-    switch (GameState)
-    {
-        case GSIntro:
-        case GSIntroInit:
-            Intro();
-            break;
-        case GSTitleScreen:
-        case GSTitleScreenInit:
-            TitleScreen();
-            break;
-        case GSStageSelect:
-        case GSStageSelectInit:
-            StageSelect();
-            break;
-        case GSGame:
-        case GSGameInit:
-            Game();
-            break;
-        default:
-            break;
+        //gamestate handling
+        switch (GameState)
+        {
+            case GSIntro:
+            case GSIntroInit:
+                Intro();
+                break;
+            case GSTitleScreen:
+            case GSTitleScreenInit:
+                TitleScreen();
+                break;
+            case GSStageSelect:
+            case GSStageSelectInit:
+                StageSelect();
+                break;
+            case GSGame:
+            case GSGameInit:
+                Game();
+                break;
+            default:
+                break;
+        }
+
+        trackLowestFreeRam();
+        printDebugCpuRamLoad();
+        Platform_PresentFrame();
+        framecount++;
+        endFrame = true;
     }
-
-    trackLowestFreeRam();
-    printDebugCpuRamLoad();
-    Platform_PresentFrame();
-    framecount++;
-    endFrame = true;
+    else
+    {
+        //webappstore stuff
+        static uint32_t prev = 0;
+        if(Platform_Micros() - prev > 1000000)
+        {
+            prev = Platform_Micros();
+            Platform_Log("Free Ram webappstore: %6" PRIu32 "\n", getFreeRam());
+        }
+    }
 }

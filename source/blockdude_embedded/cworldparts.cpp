@@ -7,12 +7,19 @@
 #include "levels.h"
 #include "gamefuncs.h"
 
+//the buffers of the dirty band rendering further down, they come and go with the board
+static void DrawBuffersInit();
+static void DrawBuffersDeinit();
 
 CWorldParts* CWorldParts_Create()
 {
 	CWorldParts* Result = (CWorldParts*) malloc(sizeof(CWorldParts));
 	if (Result)
 	{
+		//when it can not be allocated the board still works, it just gets no parts
+		CWorldPart_PoolInit();
+		//same for these, without them the board is just not painted
+		DrawBuffersInit();
 		CWorldParts_ClearPositionalItems(Result);
 		Result->ItemCount = 0;
 		Result->Player = NULL;
@@ -408,13 +415,16 @@ typedef uint64_t CellRow;
 #endif
 static_assert(CELLSX <= 64, "cellDirty keeps one bit per cell of a row in at most a uint64_t");
 
-static CellRow cellDirty[CELLSY];
+//The buffers below are allocated with the board (DrawBuffersInit) and not reserved as
+//globals, so nothing that runs instead of the game (the web app store) pays for them.
+//When one of them could not be allocated they are all NULL and the board is not painted
+static CellRow* cellDirty = NULL; //CELLSY rows
 #if SCREENBUFFER == 0
 //Half of a cell row at a time. The display window is still opened once per row,
 //the two halves just go through it back to back, so this costs a second
 //pushPixels rather than a second window setup.
 #define BANDHEIGHT (TileHeight / 2)
-static uint16_t bandBuf[WINDOW_WIDTH * BANDHEIGHT]; //the strip being composed
+static uint16_t* bandBuf = NULL; //the strip being composed, WINDOW_WIDTH * BANDHEIGHT pixels
 static int16_t bandX0, bandY0, bandW;               //where that strip sits on screen
 static int16_t lastMinScreenX = -30000, lastMinScreenY = -30000;
 
@@ -428,8 +438,8 @@ typedef uint16_t BgOffset;
 #else
 typedef uint32_t BgOffset;
 #endif
-static BgOffset bgRowOffset[WINDOW_HEIGHT];
-static uint8_t bgRowUsed[WINDOW_HEIGHT];
+static BgOffset* bgRowOffset = NULL; //WINDOW_HEIGHT rows
+static uint8_t* bgRowUsed = NULL;    //WINDOW_HEIGHT rows
 static const uint8_t* bgIndexed = NULL;
 
 //pixels are little endian RGB565, read per byte as the images are uint8_t arrays
@@ -439,11 +449,48 @@ static inline uint16_t ReadPixel(const uint8_t* p)
 }
 #endif
 
+static void DrawBuffersDeinit()
+{
+	free(cellDirty);
+	cellDirty = NULL;
+#if SCREENBUFFER == 0
+	free(bandBuf);
+	bandBuf = NULL;
+	free(bgRowOffset);
+	bgRowOffset = NULL;
+	free(bgRowUsed);
+	bgRowUsed = NULL;
+	bgIndexed = NULL;
+#endif
+}
+
+static void DrawBuffersInit()
+{
+#if SCREENBUFFER == 0
+	if (cellDirty)
+		return;
+	cellDirty = (CellRow*)calloc(CELLSY, sizeof(CellRow));
+	bandBuf = (uint16_t*)malloc(WINDOW_WIDTH * BANDHEIGHT * sizeof(uint16_t));
+	bgRowOffset = (BgOffset*)malloc(WINDOW_HEIGHT * sizeof(BgOffset));
+	bgRowUsed = (uint8_t*)malloc(WINDOW_HEIGHT * sizeof(uint8_t));
+	if (!cellDirty || !bandBuf || !bgRowOffset || !bgRowUsed)
+	{
+		DrawBuffersDeinit();
+		return;
+	}
+	//the background index is gone with the old buffers, and the first draw has to paint everything
+	bgIndexed = NULL;
+	lastMinScreenX = -30000;
+	lastMinScreenY = -30000;
+#endif
+	//with a screen buffer the whole board is drawn every frame, nothing is tracked
+}
+
 //marking is called from all over the world part code, with a buffer it is unused but harmless
 
 void CWorldParts_MarkDirty(int16_t x, int16_t y, int16_t w, int16_t h)
 {
-	if ((w <= 0) || (h <= 0))
+	if (!cellDirty || (w <= 0) || (h <= 0))
 		return;
 	int16_t x1 = x + w - 1;
 	int16_t y1 = y + h - 1;
@@ -460,6 +507,8 @@ void CWorldParts_MarkDirty(int16_t x, int16_t y, int16_t w, int16_t h)
 
 void CWorldParts_MarkAllDirty()
 {
+	if (!cellDirty)
+		return;
 	for (int16_t cy = 0; cy < CELLSY; cy++)
 		//every bit up to CELLSX, shifting by the full width of the type is undefined
 		cellDirty[cy] = (CellRow)((CellRow)~(CellRow)0 >> (sizeof(CellRow) * 8 - CELLSX));
@@ -614,6 +663,9 @@ bool CWorldParts_DrawBoard(CWorldParts* self)
 bool CWorldParts_DrawBoard(CWorldParts* self)
 {
 	bool painted = false;
+	//the buffers could not be allocated
+	if (!cellDirty)
+		return painted;
 	//read once, these are used for every part of every strip
 	const int16_t msx = self->ViewPort->MinScreenX;
 	const int16_t msy = self->ViewPort->MinScreenY;
@@ -747,6 +799,8 @@ void CWorldParts_deinit(CWorldParts* self)
 	if(!self)
 		return;
 	CWorldParts_RemoveAll(self);
+	CWorldPart_PoolDeinit();
+	DrawBuffersDeinit();
 	CViewPort_deinit(self->ViewPort);
 	free(self);
 	self = NULL;
