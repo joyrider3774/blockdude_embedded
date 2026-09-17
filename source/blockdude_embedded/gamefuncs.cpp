@@ -285,13 +285,22 @@ void DrawImageTransparent(int16_t x, int16_t y, int16_t w, int16_t h, const uint
 			continue;
 		//the images are uint8_t arrays, so the pixels are read a byte at a time
 		const uint8_t* src = image + r * w * sizeof(uint16_t);
+#if PLATFORM_DIRECT_FLASH
+		//flash is plain memory here: an evenly placed row is read 16 bits at a time, a read
+		//of an odd address faults on a core like the Cortex-M0+
+		const uint16_t* srow = (((uintptr_t)src & 1) == 0) ? (const uint16_t*)src : NULL;
+#endif
 		int16_t runX = 0, runLen = 0;
 		for (int16_t c = 0; c <= w; c++)
 		{
 			int16_t sx = x + c;
 			uint16_t color = 0xF81F;
 			if ((c < w) && (sx >= 0) && (sx < WINDOW_WIDTH))
+#if PLATFORM_DIRECT_FLASH
+				color = srow ? srow[c] : (uint16_t)(PLATFORM_READ_BYTE(src + c * 2) | (PLATFORM_READ_BYTE(src + c * 2 + 1) << 8));
+#else
 				color = PLATFORM_READ_BYTE(src + c * 2) | (PLATFORM_READ_BYTE(src + c * 2 + 1) << 8);
+#endif
 			//magenta is the transparent key, it (and the end of the row) closes a run
 			if (color != 0xF81F)
 			{

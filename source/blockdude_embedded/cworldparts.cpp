@@ -420,10 +420,10 @@ static_assert(CELLSX <= 64, "cellDirty keeps one bit per cell of a row in at mos
 //When one of them could not be allocated they are all NULL and the board is not painted
 static CellRow* cellDirty = NULL; //CELLSY rows
 #if SCREENBUFFER == 0
-//Half of a cell row at a time. The display window is still opened once per row,
-//the two halves just go through it back to back, so this costs a second
-//pushPixels rather than a second window setup.
-#define BANDHEIGHT (TileHeight / 2)
+//A whole cell row at a time. Half rows cost twice the work for every sprite: a part is
+//TileHeight tall, so it lands in both halves and its pixels are walked for each of them.
+//A full row is one window, one push and every part handled once
+#define BANDHEIGHT (TileHeight)
 static uint16_t* bandBuf = NULL; //the strip being composed, WINDOW_WIDTH * BANDHEIGHT pixels
 static int16_t bandX0, bandY0, bandW;               //where that strip sits on screen
 static int16_t lastMinScreenX = -30000, lastMinScreenY = -30000;
@@ -446,6 +446,60 @@ static const uint8_t* bgIndexed = NULL;
 static inline uint16_t ReadPixel(const uint8_t* p)
 {
 	return PLATFORM_READ_BYTE(p) | (PLATFORM_READ_BYTE(p + 1) << 8);
+}
+
+//count pixels of an image into the strip. Runs here are a few pixels at a time, a sprite
+//row is 8 of them: where flash is plain memory that is a short copy of 16 bit values, and
+//calling memcpy for it costs more than the copy itself
+static inline void BandCopy(uint16_t* dst, const uint8_t* src, int16_t count)
+{
+#if PLATFORM_DIRECT_FLASH
+	//A 16 bit read needs an even address: a core like the Cortex-M0+ faults on an odd one.
+	//The pixels of an encoded row sit wherever the control bytes leave them, so half of the
+	//time they are odd and the two bytes are put together by hand
+	if (((uintptr_t)src & 1) == 0)
+	{
+		const uint16_t* s = (const uint16_t*)src;
+		for (int16_t i = 0; i < count; i++)
+			dst[i] = s[i];
+	}
+	else
+	{
+		for (int16_t i = 0; i < count; i++, src += 2)
+			dst[i] = (uint16_t)(src[0] | (src[1] << 8));
+	}
+#else
+	PLATFORM_READ_BYTES((uint8_t*)dst, src, count * sizeof(uint16_t));
+#endif
+}
+
+//the same, but leaving the pixels of the image that carry the transparent key
+static inline void BandCopyKeyed(uint16_t* dst, const uint8_t* src, int16_t count)
+{
+#if PLATFORM_DIRECT_FLASH
+	if (((uintptr_t)src & 1) == 0)
+	{
+		const uint16_t* s = (const uint16_t*)src;
+		for (int16_t i = 0; i < count; i++)
+			//magenta is the transparent key, 0xF81F in RGB565
+			if (s[i] != 0xF81F)
+				dst[i] = s[i];
+		return;
+	}
+	for (int16_t i = 0; i < count; i++, src += 2)
+	{
+		const uint16_t col = (uint16_t)(src[0] | (src[1] << 8));
+		if (col != 0xF81F)
+			dst[i] = col;
+	}
+#else
+	//reading this a pixel at a time would be a flash read each, the row is copied first
+	uint16_t row[TileWidth];
+	PLATFORM_READ_BYTES((uint8_t*)row, src, count * sizeof(uint16_t));
+	for (int16_t i = 0; i < count; i++)
+		if (row[i] != 0xF81F)
+			dst[i] = row[i];
+#endif
 }
 #endif
 
@@ -582,9 +636,9 @@ static void BandBackground()
 				}
 				else
 				{
-					const uint8_t* src = data + 1 + used * 2;
-					for (uint8_t i = 0; i < avail; i++, src += 2)
-						*drow++ = ReadPixel(src);
+					//the pixels are little endian RGB565 like the strip, copied as they are
+					BandCopy(drow, data + 1 + used * 2, avail);
+					drow += avail;
 				}
 				left -= avail;
 			}
@@ -611,17 +665,12 @@ static void BandSprite(int16_t sx, int16_t sy, const uint8_t* image)
 	if (r1 > TileHeight) r1 = TileHeight;
 	if (c0 < 0) c0 = 0;
 	if (c1 > TileWidth) c1 = TileWidth;
+	//a visible row at a time, the transparent pixels of the sprite are left as they are
 	for (int16_t r = r0; r < r1; r++)
 	{
-		uint16_t* drow = &bandBuf[(sy + r - bandY0) * bandW];
-		const uint8_t* srow = image + r * TileWidth * sizeof(uint16_t);
-		for (int16_t c = c0; c < c1; c++)
-		{
-			uint16_t col = ReadPixel(srow + c * sizeof(uint16_t));
-			//magenta is the transparent key, 0xF81F in RGB565
-			if (col != 0xF81F)
-				drow[sx + c - bandX0] = col;
-		}
+		uint16_t* drow = &bandBuf[(sy + r - bandY0) * bandW + (sx + c0 - bandX0)];
+		const uint8_t* src = image + (r * TileWidth + c0) * sizeof(uint16_t);
+		BandCopyKeyed(drow, src, c1 - c0);
 	}
 }
 
@@ -721,30 +770,27 @@ bool CWorldParts_DrawBoard(CWorldParts* self)
 		//one window for the whole row, the halves are streamed into it in order
 		SCREEN.setAddrWindow(bandX0, cy * TileHeight, bandW, TileHeight);
 
-		for (int16_t half = 0; half < TileHeight; half += BANDHEIGHT)
+		bandY0 = cy * TileHeight;
+
+		BandBackground();
+
+		//the parts, in the order the list is sorted in so layering is kept
+		for (uint16_t Teller = 0; Teller < self->ItemCount; Teller++)
 		{
-			bandY0 = cy * TileHeight + half;
-
-			BandBackground();
-
-			//the parts, in the order the list is sorted in so layering is kept
-			for (uint16_t Teller = 0; Teller < self->ItemCount; Teller++)
-			{
-				CWorldPart* Part = self->Items[Teller];
-				int16_t sy = Part->Y - msy;
-				if ((sy + TileHeight <= bandY0) || (sy >= bandY0 + BANDHEIGHT) || (Part == self->IgnorePart))
-					continue;
-				BandSprite(Part->X - msx, sy, CWorldPart_SpriteData(Part));
-			}
+			CWorldPart* Part = self->Items[Teller];
+			int16_t sy = Part->Y - msy;
+			if ((sy + TileHeight <= bandY0) || (sy >= bandY0 + BANDHEIGHT) || (Part == self->IgnorePart))
+				continue;
+			BandSprite(Part->X - msx, sy, CWorldPart_SpriteData(Part));
+		}
 
 #if LOVYANGFX
-			//true: bandBuf holds plain RGB565, the library puts it in display order.
-			//LovyanGFX's pushPixels would open a transaction of its own every call
-			SCREEN.writePixels((const uint16_t*)bandBuf, bandW * BANDHEIGHT, true);
+		//true: bandBuf holds plain RGB565, the library puts it in display order.
+		//LovyanGFX's pushPixels would open a transaction of its own every call
+		SCREEN.writePixels((const uint16_t*)bandBuf, bandW * BANDHEIGHT, true);
 #else
-			SCREEN.pushPixels(bandBuf, bandW * BANDHEIGHT);
+		SCREEN.pushPixels(bandBuf, bandW * BANDHEIGHT);
 #endif
-		}
 		painted = true;
 	}
 

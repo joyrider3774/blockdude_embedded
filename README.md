@@ -85,7 +85,7 @@ After you solved a level the next level of that level pack is unlocked.
 | B | Back in options and level selector, ask to quit to the level selector in game, leave free view |
 | L | Ask to restart the level |
 | R | Enter or leave free view |
-| Up + Down | Show or hide the debug info |
+| (A) + Left + Down | Show or hide the debug info |
 
 ## Credits
 The Blockdude game idea was created by Soleau Software for the dos blockman game and Brandon Sterner for the Ti Calculator based game. I don't know who invented the idea first.
