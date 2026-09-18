@@ -4,6 +4,13 @@
 Blokdude is a remake of the well known TI Caluculator game from Brandon Sterner as well as the blockman game from Soleau Software. 
 This version of the game is based on the GP2X port of blockdude i made over a decade ago.
 
+## Screenshots
+The browser build, at twice the game's own 128x128:
+
+| Title screen | In game |
+| --- | --- |
+| ![Blockdude title screen](metadata/screenshots/title.png) | ![Blockdude in game](metadata/screenshots/ingame.png) |
+
 ## Devices
 Every [release](https://github.com/joyrider3774/blockdude_embedded/releases) has a build for every device. `releases/` is where a build of your own puts them, it is not part of the repository:
 
