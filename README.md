@@ -11,33 +11,30 @@ The browser build, at twice the game's own 128x128:
 | --- | --- |
 | ![Blockdude title screen](metadata/screenshots/title.png) | ![Blockdude in game](metadata/screenshots/ingame.png) |
 
-## Devices
-Every [release](https://github.com/joyrider3774/blockdude_embedded/releases) has a build for every device. `releases/` is where a build of your own puts them, it is not part of the repository:
+## Game Features:
+- 21 levels from original blockman game by Soleau Software + 4 levels made by me, in 2 level packs
+- 5 skins to choose from (the Gamebuino META build only has the default skin)
+- Audio can be switched on or off
+- Free view mode to look around levels that are bigger than the screen
+- Autosaves progress per level pack, options and the chosen skin
 
-| Device | File | How to install |
-| ------ | ---- | -------------- |
-| [ESPboy](https://www.espboy.com/) | ESPboy_Blockdude.bin | flash it, the board is a LOLIN(WEMOS) D1 mini |
-| [Gamebuino META](https://gamebuino.com/gamebuino-meta) | GamebuinoMeta_Blockdude.bin | copy it into a folder on the SD card, the .hex is for flashing it directly |
-| [Adafruit PyBadge](https://www.adafruit.com/product/4200) | PyBadge_Blockdude.uf2 | double press reset and copy it onto the drive that appears |
-| [Adafruit PyGamer](https://www.adafruit.com/product/4242) | PyGamer_Blockdude.uf2 | same as the PyBadge |
-| [Pimoroni PicoSystem](https://shop.pimoroni.com/products/picosystem) | PicoSystem_Blockdude.uf2 | hold X while switching on and copy it onto the drive that appears |
-| [Pimoroni Explorer](https://shop.pimoroni.com/products/explorer?variant=42092697845843) | Explorer_Blockdude.uf2 | hold BOOT while pressing RESET and copy it onto the drive that appears |
-| [Pimoroni Tufty 2350](https://shop.pimoroni.com/products/tufty-2350?variant=55811986227579) | Tufty_Blockdude.uf2 | hold HOME while pressing RESET and copy it onto the drive that appears |
-| [TinyCircuits Thumby Color](https://tinycircuits.com/products/thumby-color) | ThumbyColor_Blockdude.uf2 | put it into bootloader mode and copy it onto the RPI-RP2 drive that appears |
-| [Playdate](https://play.date/) | Playdate_Blockdude.pdx.zip | unzip it and sideload Blockdude.pdx, the same pdx runs in the Playdate simulator |
-| [Libretro / RetroArch](https://www.retroarch.com/) | Libretro_Blockdude.zip | copy blockdude_libretro.dll into RetroArch's cores folder and blockdude_libretro.info into its info folder, then Load Core and Start Core |
-| [Game Boy Advance](https://en.wikipedia.org/wiki/Game_Boy_Advance) | GBA_Blockdude.gba | put it on a flash cart or open it in an emulator, the progress is saved in the cartridge's SRAM |
-| [Nintendo DS](https://en.wikipedia.org/wiki/Nintendo_DS) | NDS_Blockdude.nds | put it on a flash card or open it in an emulator, the progress is saved next to it in Blockdude.sav |
-| [Nintendo 3DS](https://en.wikipedia.org/wiki/Nintendo_3DS) | 3DS_Blockdude.3dsx | copy it into /3ds/ on the SD card and start it from the Homebrew Launcher, or open it in an emulator, the progress is saved in sdmc:/3ds/Blockdude/ |
-| [Nintendo 64](https://en.wikipedia.org/wiki/Nintendo_64) | N64_Blockdude.z64 | put it on a flash cart or open it in an emulator, the progress is saved in the cartridge EEPROM |
-| [PlayStation](https://en.wikipedia.org/wiki/PlayStation_(console)) | PSX_Blockdude.exe | open it in an emulator or send it to a console that runs unsigned code, the progress is not saved yet |
-| [PlayStation Portable](https://en.wikipedia.org/wiki/PlayStation_Portable) | PSP_Blockdude.PBP | rename it to EBOOT.PBP and put it in ms0:/PSP/GAME/Blockdude/ on the memory stick, or open it in PPSSPP |
-| [PlayStation Vita](https://en.wikipedia.org/wiki/PlayStation_Vita) | Vita_Blockdude.vpk | install it with VitaShell on a Vita with homebrew enabled, or open it in Vita3K |
-| Windows | Windows_Blockdude.exe | runs on its own, the progress is saved next to it in Blockdude.sav |
-| MS-DOS | DOS_Blockdude.zip | unzip BLOCKDUD.EXE onto a DOS machine or into DOSBox and run it, the progress is saved next to it in BLOCKDUD.SAV |
-| Browser | Web_Blockdude.zip | upload it to an itch.io HTML project, or unzip it and open index.html from a web server, the progress is saved in the browser |
+## Playing the Game:
+The aim of the game, in any level, is to move the player to the exit door. You will need to create a path to this exit door by picking up blocks and placing them on strategic locations so you can reach the exit door.
+The player will automatically jump on higher level blocks or ground if you keep moving left or right in front of them. 
+If the level is bigger than what the screen can display, press R to enter free view, this will allow you to pan around the level using the dpad. Press B or R again to go back to the player.
 
-`python tools/build_releases.py` builds all of them, `python tools/convert_skins.py` turns the images in `assets/skins` and `assets/skins2` into the headers the game includes and `python tools/convert_levels.py` does the same for the levels in `assets/levels`. The Playdate build also needs the Playdate SDK, see `platforms/playdate/CMakeLists.txt`, the libretro core libretro-common, see `platforms/libretro/CMakeLists.txt`, the Game Boy Advance build devkitARM and libgba, see `platforms/gba/CMakeLists.txt`, the Nintendo DS build devkitARM, libnds and calico, see `platforms/nds/CMakeLists.txt`, the Nintendo 3DS build devkitARM and libctru, see `platforms/3ds/CMakeLists.txt`, the PlayStation build PSn00bSDK, see `platforms/psx/CMakeLists.txt`, the Nintendo 64 build the mips64-elf toolchain and libdragon, see `platforms/n64/CMakeLists.txt`, the PSP build the pspdev toolchain, see `platforms/psp/CMakeLists.txt` (pspdev has no Windows build, so on Windows it is built from WSL), and the Vita build VitaSDK, see `platforms/vita/CMakeLists.txt`, the browser build Emscripten, see `platforms/web/CMakeLists.txt`, and the MS-DOS build DJGPP, see `platforms/dos/CMakeLists.txt`.
+After you solved a level the next level of that level pack is unlocked.
+
+## Controls 
+
+| Button | Action |
+| ------ | ------ |
+| Dpad | Select menu's, options, level packs or levels to play. During gameplay move the player left or right, up picks up or drops a block. In free view pan around the level |
+| A | Confirm in menu and level selector, pickup or drop a block in game mode |
+| B | Back in options and level selector, ask to quit to the level selector in game, leave free view |
+| L | Ask to restart the level |
+| R | Enter or leave free view |
+| (A) + Left + Down | Show or hide the debug info |
 
 ### Buttons
 The game's buttons on every device:
@@ -93,30 +90,35 @@ On the PlayStation Vita the game is blown up four times to 512x512 in the middle
 
 On the Gamebuino META holding HOME for a second goes back to its loader.
 
-## Game Features:
-- 21 levels from original blockman game by Soleau Software + 4 levels made by me, in 2 level packs
-- 5 skins to choose from (the Gamebuino META build only has the default skin)
-- Audio can be switched on or off
-- Free view mode to look around levels that are bigger than the screen
-- Autosaves progress per level pack, options and the chosen skin
 
-## Playing the Game:
-The aim of the game, in any level, is to move the player to the exit door. You will need to create a path to this exit door by picking up blocks and placing them on strategic locations so you can reach the exit door.
-The player will automatically jump on higher level blocks or ground if you keep moving left or right in front of them. 
-If the level is bigger than what the screen can display, press R to enter free view, this will allow you to pan around the level using the dpad. Press B or R again to go back to the player.
+## Devices
+Every [release](https://github.com/joyrider3774/blockdude_embedded/releases) has a build for every device. `releases/` is where a build of your own puts them, it is not part of the repository:
 
-After you solved a level the next level of that level pack is unlocked.
+| Device | File | How to install |
+| ------ | ---- | -------------- |
+| [ESPboy](https://www.espboy.com/) | ESPboy_Blockdude.bin | flash it, the board is a LOLIN(WEMOS) D1 mini |
+| [Gamebuino META](https://gamebuino.com/gamebuino-meta) | GamebuinoMeta_Blockdude.bin | copy it into a folder on the SD card, the .hex is for flashing it directly |
+| [Adafruit PyBadge](https://www.adafruit.com/product/4200) | PyBadge_Blockdude.uf2 | double press reset and copy it onto the drive that appears |
+| [Adafruit PyGamer](https://www.adafruit.com/product/4242) | PyGamer_Blockdude.uf2 | same as the PyBadge |
+| [Pimoroni PicoSystem](https://shop.pimoroni.com/products/picosystem) | PicoSystem_Blockdude.uf2 | hold X while switching on and copy it onto the drive that appears |
+| [Pimoroni Explorer](https://shop.pimoroni.com/products/explorer?variant=42092697845843) | Explorer_Blockdude.uf2 | hold BOOT while pressing RESET and copy it onto the drive that appears |
+| [Pimoroni Tufty 2350](https://shop.pimoroni.com/products/tufty-2350?variant=55811986227579) | Tufty_Blockdude.uf2 | hold HOME while pressing RESET and copy it onto the drive that appears |
+| [TinyCircuits Thumby Color](https://tinycircuits.com/products/thumby-color) | ThumbyColor_Blockdude.uf2 | put it into bootloader mode and copy it onto the RPI-RP2 drive that appears |
+| [Playdate](https://play.date/) | Playdate_Blockdude.pdx.zip | unzip it and sideload Blockdude.pdx, the same pdx runs in the Playdate simulator |
+| [Libretro / RetroArch](https://www.retroarch.com/) | Libretro_Blockdude.zip | copy blockdude_libretro.dll into RetroArch's cores folder and blockdude_libretro.info into its info folder, then Load Core and Start Core |
+| [Game Boy Advance](https://en.wikipedia.org/wiki/Game_Boy_Advance) | GBA_Blockdude.gba | put it on a flash cart or open it in an emulator, the progress is saved in the cartridge's SRAM |
+| [Nintendo DS](https://en.wikipedia.org/wiki/Nintendo_DS) | NDS_Blockdude.nds | put it on a flash card or open it in an emulator, the progress is saved next to it in Blockdude.sav |
+| [Nintendo 3DS](https://en.wikipedia.org/wiki/Nintendo_3DS) | 3DS_Blockdude.3dsx | copy it into /3ds/ on the SD card and start it from the Homebrew Launcher, or open it in an emulator, the progress is saved in sdmc:/3ds/Blockdude/ |
+| [Nintendo 64](https://en.wikipedia.org/wiki/Nintendo_64) | N64_Blockdude.z64 | put it on a flash cart or open it in an emulator, the progress is saved in the cartridge EEPROM |
+| [PlayStation](https://en.wikipedia.org/wiki/PlayStation_(console)) | PSX_Blockdude.exe | open it in an emulator or send it to a console that runs unsigned code, the progress is not saved yet |
+| [PlayStation Portable](https://en.wikipedia.org/wiki/PlayStation_Portable) | PSP_Blockdude.PBP | rename it to EBOOT.PBP and put it in ms0:/PSP/GAME/Blockdude/ on the memory stick, or open it in PPSSPP |
+| [PlayStation Vita](https://en.wikipedia.org/wiki/PlayStation_Vita) | Vita_Blockdude.vpk | install it with VitaShell on a Vita with homebrew enabled, or open it in Vita3K |
+| Windows | Windows_Blockdude.exe | runs on its own, the progress is saved next to it in Blockdude.sav |
+| MS-DOS | DOS_Blockdude.zip | unzip BLOCKDUD.EXE onto a DOS machine or into DOSBox and run it, the progress is saved next to it in BLOCKDUD.SAV |
+| Browser | Web_Blockdude.zip | upload it to an itch.io HTML project, or unzip it and open index.html from a web server, the progress is saved in the browser |
 
-## Controls 
+`python tools/build_releases.py` builds all of them, `python tools/convert_skins.py` turns the images in `assets/skins` and `assets/skins2` into the headers the game includes and `python tools/convert_levels.py` does the same for the levels in `assets/levels`. The Playdate build also needs the Playdate SDK, see `platforms/playdate/CMakeLists.txt`, the libretro core libretro-common, see `platforms/libretro/CMakeLists.txt`, the Game Boy Advance build devkitARM and libgba, see `platforms/gba/CMakeLists.txt`, the Nintendo DS build devkitARM, libnds and calico, see `platforms/nds/CMakeLists.txt`, the Nintendo 3DS build devkitARM and libctru, see `platforms/3ds/CMakeLists.txt`, the PlayStation build PSn00bSDK, see `platforms/psx/CMakeLists.txt`, the Nintendo 64 build the mips64-elf toolchain and libdragon, see `platforms/n64/CMakeLists.txt`, the PSP build the pspdev toolchain, see `platforms/psp/CMakeLists.txt` (pspdev has no Windows build, so on Windows it is built from WSL), and the Vita build VitaSDK, see `platforms/vita/CMakeLists.txt`, the browser build Emscripten, see `platforms/web/CMakeLists.txt`, and the MS-DOS build DJGPP, see `platforms/dos/CMakeLists.txt`.
 
-| Button | Action |
-| ------ | ------ |
-| Dpad | Select menu's, options, level packs or levels to play. During gameplay move the player left or right, up picks up or drops a block. In free view pan around the level |
-| A | Confirm in menu and level selector, pickup or drop a block in game mode |
-| B | Back in options and level selector, ask to quit to the level selector in game, leave free view |
-| L | Ask to restart the level |
-| R | Enter or leave free view |
-| (A) + Left + Down | Show or hide the debug info |
 
 ## Credits
 The Blockdude game idea was created by Soleau Software for the dos blockman game and Brandon Sterner for the Ti Calculator based game. I don't know who invented the idea first.
