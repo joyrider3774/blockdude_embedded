@@ -1,5 +1,5 @@
 # Game Boy Advance build of Blockdude: the game's own sources with the PLATFORM_GBA platform
-# (source/blockdude_embedded/PlatformGBA.*), devkitARM and libgba (toolchain.cmake, C:/gba_dev by default).
+# (source/blockdude_embedded/PlatformGBA.*), devkitARM and libgba (toolchain.cmake, C:/devkitarm by default).
 #
 # With MSYS2's cmake and ninja, from this folder:
 #   cmake -S . -B build -G Ninja
