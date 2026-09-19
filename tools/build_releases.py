@@ -90,7 +90,7 @@ SKINS = 5
 # (device, variant added to the file name, defines)
 TARGETS = [
     ("ESPboy", "", {}),
-    ("GamebuinoMeta", "", {"SCREENBUFFER": 0}),
+    ("GamebuinoMeta", "", {}),
     ("PyBadge", "", {}),
     ("PyGamer", "", {}),
     ("PicoSystem", "", {}),
