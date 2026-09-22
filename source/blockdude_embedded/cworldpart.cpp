@@ -375,7 +375,14 @@ bool CWorldPart_MoveTo(CWorldPart* self, const int8_t PlayFieldXin, const int8_t
 				//Right
 				if ((self->AnimBase != AnimBaseRight) && (PlayFieldXin > self->PlayFieldX))
 				{
-					self->MoveDelayCounter = -TileWidth / self->MoveSpeed;
+					//GameMoveSpeed and not self->MoveSpeed, which is the same number for every part
+					//that moves: the frames a turn waits are then worked out while this compiles.
+					//As a division it is a call to libgcc's __divsi3, the Cortex-M0+ having no
+					//divide instruction, and both web emulators get that helper's sign wrong:
+					//-8 / 2 comes back as +4. A counter that starts out positive never counts up
+					//to MoveDelay and the player stands still, walking on the spot, until the
+					//int8_t wraps. A constant cannot be got wrong
+					self->MoveDelayCounter = -(TileWidth / GameMoveSpeed);
 					self->IsMoving = true;
 					Result = true;
 					self->AnimBase = AnimBaseRight;
@@ -384,7 +391,14 @@ bool CWorldPart_MoveTo(CWorldPart* self, const int8_t PlayFieldXin, const int8_t
 				//Left
 				if ((self->AnimBase != AnimBaseLeft) && (PlayFieldXin < self->PlayFieldX))
 				{
-					self->MoveDelayCounter = -TileWidth / self->MoveSpeed;
+					//GameMoveSpeed and not self->MoveSpeed, which is the same number for every part
+					//that moves: the frames a turn waits are then worked out while this compiles.
+					//As a division it is a call to libgcc's __divsi3, the Cortex-M0+ having no
+					//divide instruction, and both web emulators get that helper's sign wrong:
+					//-8 / 2 comes back as +4. A counter that starts out positive never counts up
+					//to MoveDelay and the player stands still, walking on the spot, until the
+					//int8_t wraps. A constant cannot be got wrong
+					self->MoveDelayCounter = -(TileWidth / GameMoveSpeed);
 					self->IsMoving = true;
 					Result = true;
 					self->AnimBase = AnimBaseLeft;
@@ -855,11 +869,7 @@ bool CWorldPart_Move(CWorldPart* self)
 
 		if (self->IsMoving)
 		{
-			//>= and not ==: the counter only ever counts up to MoveDelay, so the two are the same
-			//for every value it legitimately takes. Should it ever start out past MoveDelay, == would
-			//wait for it to wrap the whole int8_t range, 256 frames of standing still with the walk
-			//animation running, where >= simply steps on the next frame
-			if (self->MoveDelayCounter >= self->MoveDelay)
+			if (self->MoveDelayCounter == self->MoveDelay)
 			{
 				Result = true;
 				self->X += self->Xi;
