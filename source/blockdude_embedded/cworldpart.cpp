@@ -855,7 +855,11 @@ bool CWorldPart_Move(CWorldPart* self)
 
 		if (self->IsMoving)
 		{
-			if (self->MoveDelayCounter == self->MoveDelay)
+			//>= and not ==: the counter only ever counts up to MoveDelay, so the two are the same
+			//for every value it legitimately takes. Should it ever start out past MoveDelay, == would
+			//wait for it to wrap the whole int8_t range, 256 frames of standing still with the walk
+			//animation running, where >= simply steps on the next frame
+			if (self->MoveDelayCounter >= self->MoveDelay)
 			{
 				Result = true;
 				self->X += self->Xi;
