@@ -92,6 +92,7 @@ Every [release](https://github.com/joyrider3774/blockdude_embedded/releases) has
 | [PlayStation Vita](https://en.wikipedia.org/wiki/PlayStation_Vita) | Vita_Blockdude.vpk | install it with VitaShell on a Vita with homebrew enabled, or open it in Vita3K |
 | Windows | Windows_Blockdude.exe | runs on its own, the progress is saved next to it in Blockdude.sav |
 | MS-DOS | DOS_Blockdude.zip | unzip BLOCKDUD.EXE onto a DOS machine or into DOSBox and run it, the progress is saved next to it in BLOCKDUD.SAV |
+| MS-DOS, not dithered | DOS_Blockdude_ND.zip | the same program with `DITHERING` 0, unzip BLOCK_ND.EXE and run it the same way. On a 256 colour screen a shade the palette has no colour for is the nearer one it does have, instead of a pattern of the two |
 | Browser | Web_Blockdude.zip | upload it to an itch.io HTML project, or unzip it and open index.html from a web server, the progress is saved in the browser |
 
 The Tufty 2350 has no speaker, the game is silent there. Holding RESET until the rear LEDs are dark puts it to sleep, a front button wakes it up again, with UP and DOWN held as well it goes into shipping mode instead.
