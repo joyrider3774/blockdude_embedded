@@ -18,6 +18,16 @@
 #ifndef FORCEDEBUG
 #define FORCEDEBUG 0
 #endif
+//1 = the colours of an image are spread over the ones the buffer can hold, so that a shade it
+//has no colour for is a pattern of the two it does instead of the nearer of them. 0 = every
+//colour becomes the nearest one there is, which shows as bands across anything that shades.
+//An 8 bpp buffer is RGB332 and drops 2 bits of red, 3 of green and 3 of blue, and a 1 bpp buffer
+//keeps only black and white, so both have something to spread. A 16 bpp buffer holds every colour
+//of the image as it is and is left alone. A build can set this itself, see DitherSpread in
+//Platform.h
+#ifndef DITHERING
+#define DITHERING 0
+#endif
 //GameMoveSpeed and PlayerAnimDelay depend on the tile size, see IMAGESET below
 #define FrameDelayInput 1			
 #define FrameDelayInputLevelEditor 3
@@ -33,16 +43,16 @@
 
 //FORCESKIN: -1 = every skin is built in and can be picked in the options, n = only skin n
 //(0 Default, 1 Tech, 2 Flat, 3 Ti-83, 4 Kenney) is built in and always used, which saves the
-//flash of the others on a small device. A 1 bpp buffer can only show SKINBLACKWHITE, so it
-//forces that one. Set by the device header or the build
-#if SCREENBUFFER == 1
-  #if defined(FORCESKIN) && (FORCESKIN >= 0) && (FORCESKIN != SKINBLACKWHITE)
-  #error "a 1 bpp buffer can only show the black & white skin, FORCESKIN has to be -1 or 4"
-  #endif
-  #undef FORCESKIN
+//flash of the others on a small device. A 1 bpp buffer has only two colours to show, so the
+//black & white skin is the one it takes on its own. A build can still ask it for another one,
+//whose shades then go through the brightness rule in SetBufferBit, and with DITHERING come out
+//as a pattern of the two colours rather than as the nearer of them. Set by the device header or the build
+#if !defined(FORCESKIN)
+  #if SCREENBUFFER == 1
   #define FORCESKIN SKINBLACKWHITE
-#elif !defined(FORCESKIN)
+  #else
   #define FORCESKIN -1
+  #endif
 #endif
 #if (FORCESKIN < -1) || (FORCESKIN >= MAXSKINS)
 #error "FORCESKIN has to be -1 or a skin number below MAXSKINS"

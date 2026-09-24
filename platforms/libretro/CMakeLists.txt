@@ -33,6 +33,14 @@ set_property(CACHE SCREENBUFFER PROPERTY STRINGS 1 8 16)
 if(NOT SCREENBUFFER MATCHES "^(1|8|16)$")
     message(FATAL_ERROR "SCREENBUFFER has to be 1, 8 or 16, not ${SCREENBUFFER}")
 endif()
+# 1 = the colours of an image are spread over the ones the buffer can hold instead of every colour
+# becoming the nearest one there is, 0 = they are not. An 8 bpp and a 1 bpp buffer have something
+# to gain from it, see DITHERING in defines.h
+set(DITHERING 0 CACHE STRING "DITHERING setting: 0 or 1")
+if(NOT DITHERING MATCHES "^(0|1)$")
+    message(FATAL_ERROR "DITHERING has to be 0 or 1, not ${DITHERING}")
+endif()
+
 
 # the image set, 1 (16x16 tiles) or 2 (8x8 tiles), see IMAGESET in defines.h
 set(IMAGESET 2 CACHE STRING "IMAGESET setting: 1 or 2")
@@ -52,7 +60,8 @@ add_library(blockdude_libretro SHARED ${GAME_SOURCES})
 # the name frontends look for: blockdude_libretro.dll / .so, without the lib gcc puts in front
 set_target_properties(blockdude_libretro PROPERTIES PREFIX "" POSITION_INDEPENDENT_CODE ON)
 target_compile_definitions(blockdude_libretro PRIVATE PLATFORM_LIBRETRO LIBRETRO_GAME_NAME="Blockdude" LIBRETRO_GAME_VERSION="1.0"
-    SCREENBUFFER=${SCREENBUFFER} FORCESKIN=${FORCESKIN} FORCEDEBUG=${FORCEDEBUG} IMAGESET=${IMAGESET})
+    SCREENBUFFER=${SCREENBUFFER}
+    DITHERING=${DITHERING} FORCESKIN=${FORCESKIN} FORCEDEBUG=${FORCEDEBUG} IMAGESET=${IMAGESET})
 target_include_directories(blockdude_libretro PRIVATE "${GAME_DIR}" "${LIBRETRO_COMMON_DIR}/include")
 target_compile_options(blockdude_libretro PRIVATE -ffunction-sections -fdata-sections)
 
