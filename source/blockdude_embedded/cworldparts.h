@@ -4,6 +4,8 @@
 #include <stdint.h>
 #include "commonvars.h"
 #include "cviewport.h"
+//for PLATFORM_FAST_CODE, this paints the board a pixel at a time
+#include "Platform.h"
 
 
 typedef struct CWorldPart CWorldPart;
@@ -61,7 +63,7 @@ bool CWorldParts_SavePositional(CWorldParts* self, char* Filename);
 bool CWorldParts_Save(CWorldParts* self, char* Filename);
 bool CWorldParts_Move(CWorldParts* self);
 //repaints only the screen cells whose contents changed, returns true if anything was painted
-bool CWorldParts_DrawBoard(CWorldParts* self);
+PLATFORM_FAST_CODE bool CWorldParts_DrawBoard(CWorldParts* self);
 //draws every part in view, used for the full board draw with a screen buffer
 void CWorldParts_Draw(CWorldParts* self);
 //screen rectangle (in pixels) that has to be repainted on the next CWorldParts_DrawBoard
