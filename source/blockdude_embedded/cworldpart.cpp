@@ -1,6 +1,7 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <stdlib.h>
+#include <inttypes.h>
 #include "commonvars.h"
 #include "cworldpart.h"
 #include "sound.h"
@@ -24,7 +25,11 @@ bool CWorldPart_PoolInit()
 		return true;
 	WorldPartPool = (CWorldPart*)malloc(MAXWORLDPARTS * sizeof(CWorldPart));
 	if (!WorldPartPool)
+	{
+		Platform_Log("CWorldPart_PoolInit: out of heap for %d parts, %" PRIu32 " free\n",
+		             (int)MAXWORLDPARTS, Platform_FreeHeap());
 		return false;
+	}
 	for (uint16_t Teller = 0; Teller < MAXWORLDPARTS; Teller++)
 		WorldPartPool[Teller].Type = 0;
 	WorldPartPoolNext = 0;
@@ -241,11 +246,15 @@ bool CWorldPart_MoveTo(CWorldPart* self, const int8_t PlayFieldXin, const int8_t
 				Result = true;
 				if (WorldParts && (self != WorldParts->IgnorePart) && (self->Group != GroupNone))
 				{
-					if ((self->PlayFieldX >= 0) && (self->PlayFieldY >= 0))
+					//Only when that tile still names this part. One grid holds one part a tile, so a part
+					//that has already taken this tile must not be wiped off the board by the one leaving
+					if ((self->PlayFieldX >= 0) && (self->PlayFieldY >= 0) &&
+					    (WorldParts->PositionalItems[self->PlayFieldY][self->PlayFieldX] ==
+					     CWorldPart_PoolIndex(self)))
 					{
-						WorldParts->PositionalItems[self->Group][self->PlayFieldY][self->PlayFieldX] = NoWorldPart;
+						WorldParts->PositionalItems[self->PlayFieldY][self->PlayFieldX] = NoWorldPart;
 					}
-					WorldParts->PositionalItems[self->Group][PlayFieldYin][PlayFieldXin] = CWorldPart_PoolIndex(self);
+					WorldParts->PositionalItems[PlayFieldYin][PlayFieldXin] = CWorldPart_PoolIndex(self);
 				}
 
 				self->PlayFieldX = PlayFieldXin;
@@ -270,8 +279,11 @@ bool CWorldPart_MoveTo(CWorldPart* self, const int8_t PlayFieldXin, const int8_t
 
 					if (WorldParts)
 					{
-						//check for a box on top of the player.
-						CWorldPart* Part = CWorldParts_PartAtPosition(WorldParts, self->PlayFieldX - 1, self->PlayFieldY - 1);
+						//The box the player is carrying, which the player holds a pointer to. This used to
+						//look the box up in the positional grid at the tile the player came from, so
+						//carrying it depended on the grid still naming the box there part way through
+						//the player's own move. The pointer does not, see CWorldPart_AttachToPlayer
+						CWorldPart* Part = self->AttachedPart;
 						if(Part)
 						{
 							if (Part->Group == GroupBox)
@@ -301,8 +313,11 @@ bool CWorldPart_MoveTo(CWorldPart* self, const int8_t PlayFieldXin, const int8_t
 
 					if (WorldParts)
 					{
-						//check for a box on top of the player.
-						CWorldPart* Part = CWorldParts_PartAtPosition(WorldParts, self->PlayFieldX + 1, self->PlayFieldY - 1);
+						//The box the player is carrying, which the player holds a pointer to. This used to
+						//look the box up in the positional grid at the tile the player came from, so
+						//carrying it depended on the grid still naming the box there part way through
+						//the player's own move. The pointer does not, see CWorldPart_AttachToPlayer
+						CWorldPart* Part = self->AttachedPart;
 						if (Part)
 						{
 							if (Part->Group == GroupBox)
@@ -335,8 +350,11 @@ bool CWorldPart_MoveTo(CWorldPart* self, const int8_t PlayFieldXin, const int8_t
 
 					if (WorldParts)
 					{
-						//check for a box on top of the player.
-						CWorldPart* Part = CWorldParts_PartAtPosition(WorldParts, self->PlayFieldX, self->PlayFieldY);
+						//The box the player is carrying, which the player holds a pointer to. This used to
+						//look the box up in the positional grid at the tile the player came from, so
+						//carrying it depended on the grid still naming the box there part way through
+						//the player's own move. The pointer does not, see CWorldPart_AttachToPlayer
+						CWorldPart* Part = self->AttachedPart;
 						if (Part)
 						{
 							if (Part->Group == GroupBox)
@@ -356,8 +374,11 @@ bool CWorldPart_MoveTo(CWorldPart* self, const int8_t PlayFieldXin, const int8_t
 					if (WorldParts)
 					{
 
-						//check for a box on top of the player.
-						CWorldPart* Part = CWorldParts_PartAtPosition(WorldParts, self->PlayFieldX, self->PlayFieldY - 2);
+						//The box the player is carrying, which the player holds a pointer to. This used to
+						//look the box up in the positional grid at the tile the player came from, so
+						//carrying it depended on the grid still naming the box there part way through
+						//the player's own move. The pointer does not, see CWorldPart_AttachToPlayer
+						CWorldPart* Part = self->AttachedPart;
 						if (Part)
 						{
 							if (Part->Group == GroupBox)
@@ -420,11 +441,15 @@ bool CWorldPart_MoveTo(CWorldPart* self, const int8_t PlayFieldXin, const int8_t
 					Result = true;
 					if (WorldParts && (self != WorldParts->IgnorePart) && (self->Group != GroupNone))
 					{
-						if ((self->PlayFieldX >= 0) && (self->PlayFieldY >= 0))
+						//Only when that tile still names this part. One grid holds one part a tile, so a part
+						//that has already taken this tile must not be wiped off the board by the one leaving
+						if ((self->PlayFieldX >= 0) && (self->PlayFieldY >= 0) &&
+						    (WorldParts->PositionalItems[self->PlayFieldY][self->PlayFieldX] ==
+						     CWorldPart_PoolIndex(self)))
 						{
-							WorldParts->PositionalItems[self->Group][self->PlayFieldY][self->PlayFieldX] = NoWorldPart;
+							WorldParts->PositionalItems[self->PlayFieldY][self->PlayFieldX] = NoWorldPart;
 						}
-						WorldParts->PositionalItems[self->Group][PlayFieldYin][PlayFieldXin] = CWorldPart_PoolIndex(self);
+						WorldParts->PositionalItems[PlayFieldYin][PlayFieldXin] = CWorldPart_PoolIndex(self);
 					}
 					self->PlayFieldX = PlayFieldXin;
 					self->PlayFieldY = PlayFieldYin;
@@ -628,11 +653,15 @@ bool CWorldPart_SetPosition(CWorldPart* self, const int8_t PlayFieldXin, const i
 		{
 			if (WorldParts && (self != WorldParts->IgnorePart) && (self->Group != GroupNone))
 			{
-				if ((self->PlayFieldX >= 0) && (self->PlayFieldY >= 0))
+				//Only when that tile still names this part. One grid holds one part a tile, so a part
+				//that has already taken this tile must not be wiped off the board by the one leaving
+				if ((self->PlayFieldX >= 0) && (self->PlayFieldY >= 0) &&
+				    (WorldParts->PositionalItems[self->PlayFieldY][self->PlayFieldX] ==
+				     CWorldPart_PoolIndex(self)))
 				{
-					WorldParts->PositionalItems[self->Group][self->PlayFieldY][self->PlayFieldX] = NoWorldPart;
+					WorldParts->PositionalItems[self->PlayFieldY][self->PlayFieldX] = NoWorldPart;
 				}
-				WorldParts->PositionalItems[self->Group][PlayFieldYin][PlayFieldXin] = CWorldPart_PoolIndex(self);
+				WorldParts->PositionalItems[PlayFieldYin][PlayFieldXin] = CWorldPart_PoolIndex(self);
 			}
 			self->PlayFieldX = PlayFieldXin;
 			self->PlayFieldY = PlayFieldYin;
@@ -1002,12 +1031,28 @@ const uint8_t* CWorldPart_SpriteData(CWorldPart* self)
 
 	if (!Img)
 		return NULL;
+#if ONEBITIMAGES
+	//A one bit picture is packed and its rows are encoded, so a frame of a sheet cannot be
+	//reached by stepping the pointer. The sheet is given whole and the frame asked for on its
+	//own, see CWorldPart_SpriteFrame
+	if (skinImagesOneBit)
+		return Img;
+#endif
 	return Img + self->AnimPhase * TileWidth * TileHeight * sizeof(uint16_t);
+}
+
+//Which frame of its sheet the part shows. The frames are stacked down a sheet one tile wide, so
+//this is also the row the frame starts at, in tiles
+uint8_t CWorldPart_SpriteFrame(CWorldPart* self)
+{
+	return self->AnimPhase;
 }
 
 void CWorldPart_Draw(CWorldPart* self)
 {
 	CWorldPart_Event_BeforeDraw(self);
-	DrawImageTransparent(self->X - WorldParts->ViewPort->MinScreenX, self->Y - WorldParts->ViewPort->MinScreenY,
-	                     TileWidth, TileHeight, CWorldPart_SpriteData(self));
+	DrawSpriteFrame(self->X - WorldParts->ViewPort->MinScreenX,
+	                self->Y - WorldParts->ViewPort->MinScreenY,
+	                TileWidth, TileHeight, CWorldPart_SpriteData(self),
+	                CWorldPart_SpriteFrame(self));
 }

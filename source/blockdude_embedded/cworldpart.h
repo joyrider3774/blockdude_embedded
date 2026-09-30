@@ -31,14 +31,18 @@ struct CWorldPart {
 	int8_t MoveSpeed, MoveDelay, MoveDelayCounter, Xi, Yi;
 	//IDxxx (max 26) and Groupxxx (max 10)
 	uint8_t Type, Group;
-	//anim phases max AnimBaseRightJump + AnimPhases - 1 (15)
-	uint8_t AnimPhase;
-	uint8_t PrevDrawAnimPhase;
 	uint8_t AnimCounter, AnimBase, AnimDelay, AnimDelayCounter, AnimPhases;
-	bool FirstArriveEventFired;
-	bool IsMoving;
-	bool NeedToMoveLeft;
-	bool NeedToMoveRight;
+	//The two phases reach AnimBaseRightJump + AnimPhases - 1, which is 15, so four bits hold one,
+	//and the four flags take a bit each: six bytes of fields in two. The struct has pointers in it
+	//so its size is rounded to four, and packing only the flags would have been padded straight
+	//back to 36; going to 32 takes 4 bytes off every part, and the pool holds one per part of a
+	//level. See MAXWORLDPARTS
+	uint8_t AnimPhase : 4;
+	uint8_t PrevDrawAnimPhase : 4;
+	uint8_t FirstArriveEventFired : 1;
+	uint8_t IsMoving : 1;
+	uint8_t NeedToMoveLeft : 1;
+	uint8_t NeedToMoveRight : 1;
 };
 
 //every part lives in this pool (MAXWORLDPARTS parts), the positional grid in CWorldParts keeps its index.
@@ -75,5 +79,7 @@ bool CWorldPart_CanMoveTo(CWorldPart* self, const int8_t PlayFieldXin, const int
 bool CWorldPart_Move(CWorldPart* self);
 //the 16x16 RGB565_LE image of the part's current anim phase, NULL if it has none
 const uint8_t* CWorldPart_SpriteData(CWorldPart* self);
+//which frame of its sheet the part shows, see CWorldPart_SpriteData
+uint8_t CWorldPart_SpriteFrame(CWorldPart* self);
 
 #endif

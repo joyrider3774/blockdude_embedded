@@ -5,9 +5,13 @@
 #include "sound.h"
 #include "savestate.h"
 #include "gamefuncs.h"
+//the one bit pictures of the black & white skin, which the band renderer reads too
+#include "onebitimage.h"
 #include "cviewport.h"
 #include "cworldpart.h"
 #include "cworldparts.h"
+//level_data_counts: how many levels each pack that is built in holds
+#include "levels.h"
 //only the skins FORCESKIN leaves in are part of the build (a 1 bpp buffer forces the black & white
 //Kenney skin). The Flat skin (2) uses Default images as well
 #if SKINBUILT(0) || SKINBUILT(2)
@@ -272,6 +276,14 @@ void DrawImageTransparent(int16_t x, int16_t y, int16_t w, int16_t h, const uint
 {
 	if (!image)
 		return;
+#if ONEBITIMAGES
+	if (skinImagesOneBit)
+	{
+		//the picture carries its own size and is drawn whole
+		drawImageOneBitPart(x, y, 0, 0, w, h, image, true);
+		return;
+	}
+#endif
 #if (SCREENBUFFER == 0) && !LOVYANGFX
 	GFX.pushImage(x, y, w, h, (const uint16_t*)image, 0xF81F);
 #elif SCREENBUFFER == 0
@@ -330,8 +342,32 @@ void DrawImageTransparent(int16_t x, int16_t y, int16_t w, int16_t h, const uint
 //The data is read here with PLATFORM_READ_BYTE and PLATFORM_READ_BYTES: LovyanGFX reads
 //image data through plain pointers, but PROGMEM on the ESP8266 is flash that only takes
 //32 bit reads, so none of its image functions may be handed the data
+//Draws one frame of a sprite sheet. The frames are stacked down a sheet one tile wide, so a
+//RGB565 sheet has the frame picked out by CWorldPart_SpriteData stepping the pointer, while a one
+//bit sheet is handed over whole and the frame is the part of it that starts at that row
+void DrawSpriteFrame(int16_t x, int16_t y, int16_t w, int16_t h, const uint8_t* image, uint8_t frame)
+{
+	if (!image)
+		return;
+#if ONEBITIMAGES
+	if (skinImagesOneBit)
+	{
+		drawImageOneBitPart(x, y, 0, frame * h, w, h, image, true);
+		return;
+	}
+#endif
+	DrawImageTransparent(x, y, w, h, image);
+}
+
 void pushImageRLE(int16_t x, int16_t y, int16_t w, int16_t h, const uint8_t* data)
 {
+#if ONEBITIMAGES
+	if (skinImagesOneBit)
+	{
+		drawImageOneBitPart(x, y, 0, 0, w, h, data, false);
+		return;
+	}
+#endif
 #if SCREENBUFFER
 	//decoded straight into the buffer instead of streamed to the display. The pixels of a
 	//control go in a row at a time: the part of the row that is on screen is worked out once,
@@ -506,9 +542,14 @@ uint8_t CurrentSkin(void)
 #endif
 }
 
+//1 while the skin in use keeps its pictures one bit a pixel
+bool skinImagesOneBit = false;
+
 void LoadGraphics(void)
 {
 	UnLoadGraphics();
+	//the black & white skin keeps its pictures one bit a pixel, the others as RGB565
+	skinImagesOneBit = ONEBITIMAGES && (CurrentSkin() == SKINBLACKWHITE);
 	switch (CurrentSkin())
 	{
 #if SKINBUILT(0)
@@ -710,22 +751,22 @@ void LoadFonts(void)
 
 void FindLevelPacks(void)
 {
-	FoundLevelPacks = 2;
+	//however many LEVELPACKS left in, see defines.h
+	FoundLevelPacks = LEVELPACKCOUNT;
 }
 
 
 void FindLevels(void)
 {
-	switch(CurrentLevelPackIndex)
+	//the counts come from levels.h, which tools/convert_levels.py writes from what lies in
+	//assets/levels, and they already take MAXLEVELSPERPACK into account
+	//a pack this build does not hold has no row in the table, see FoundLevelPacks
+	if ((CurrentLevelPackIndex < 0) || (CurrentLevelPackIndex >= LEVELPACKCOUNT))
 	{
-		case 0:
-			InstalledLevels = 21;
-			break;
-		case 1:
-			InstalledLevels = 4;
-			break;
-
+		InstalledLevels = 0;
+		return;
 	}
+	InstalledLevels = level_data_counts[CurrentLevelPackIndex];
 }
 
 bool AskQuestionUpdate(int8_t* Id, bool* Answer, bool MustBeAButton)

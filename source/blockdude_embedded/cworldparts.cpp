@@ -1,7 +1,10 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <stdlib.h>
+#include <inttypes.h>
 #include "cworldparts.h"
+//the strips hold pictures of the black & white skin too, and those are one bit a pixel
+#include "onebitimage.h"
 #include "cworldpart.h"
 #include "commonvars.h"
 #include "levels.h"
@@ -10,6 +13,93 @@
 //the buffers of the dirty band rendering further down, they come and go with the board
 static void DrawBuffersInit();
 static void DrawBuffersDeinit();
+
+//A level is kept as three run length encoded planes rather than as the list of (type, x, y)
+//triplets it is played as, see tools/convert_levels.py. Encoding that list as it stands gains
+//nothing, since the byte after a type is a coordinate and the byte after that another, so almost
+//nothing repeats; keeping the types together, then the x's, then the y's puts like next to like
+//and takes 40% off.
+//The three planes are read side by side, a stream each, so a level is still read a part at a time
+//and none of it is held in ram
+#define LEVEL_HEADER 6
+
+typedef struct PlaneReader PlaneReader;
+struct PlaneReader
+{
+	const uint8_t* pos;
+	uint8_t left;            //how many bytes the run or the literal still owes
+	uint8_t repeated;        //the byte a run repeats
+	bool inRun;
+};
+
+static void PlaneReaderInit(PlaneReader* plane, const uint8_t* at)
+{
+	plane->pos = at;
+	plane->left = 0;
+	plane->repeated = 0;
+	plane->inRun = false;
+}
+
+static uint8_t PlaneReaderNext(PlaneReader* plane)
+{
+	if (plane->left == 0)
+	{
+		//PLATFORM_READ_BYTE is pgm_read_byte on some of the devices, which may look at what it
+		//is handed more than once, so the pointer is never stepped on inside it
+		uint8_t control = PLATFORM_READ_BYTE(plane->pos);
+		plane->pos++;
+		if (control & 0x80)
+		{
+			plane->inRun = true;
+			plane->left = (uint8_t)((control & 0x7F) + 1);
+			plane->repeated = PLATFORM_READ_BYTE(plane->pos);
+			plane->pos++;
+		}
+		else
+		{
+			plane->inRun = false;
+			plane->left = (uint8_t)(control + 1);
+		}
+	}
+	plane->left--;
+	if (plane->inRun)
+		return plane->repeated;
+	uint8_t value = PLATFORM_READ_BYTE(plane->pos);
+	plane->pos++;
+	return value;
+}
+
+typedef struct LevelReader LevelReader;
+struct LevelReader
+{
+	PlaneReader type, x, y;
+	uint16_t left;           //parts still to come
+};
+
+//how many parts the level holds, and the three planes set at their first byte
+static uint16_t LevelReaderInit(LevelReader* reader, const uint8_t* level)
+{
+	uint16_t parts = (uint16_t)(PLATFORM_READ_BYTE(level) | (PLATFORM_READ_BYTE(level + 1) << 8));
+	uint16_t xAt = (uint16_t)(PLATFORM_READ_BYTE(level + 2) | (PLATFORM_READ_BYTE(level + 3) << 8));
+	uint16_t yAt = (uint16_t)(PLATFORM_READ_BYTE(level + 4) | (PLATFORM_READ_BYTE(level + 5) << 8));
+	PlaneReaderInit(&reader->type, level + LEVEL_HEADER);
+	PlaneReaderInit(&reader->x, level + xAt);
+	PlaneReaderInit(&reader->y, level + yAt);
+	reader->left = parts;
+	return parts;
+}
+
+//gives the next part of the level, false once there are none left
+static bool LevelReaderNext(LevelReader* reader, uint8_t* type, uint8_t* x, uint8_t* y)
+{
+	if (reader->left == 0)
+		return false;
+	reader->left--;
+	*type = PlaneReaderNext(&reader->type);
+	*x = PlaneReaderNext(&reader->x);
+	*y = PlaneReaderNext(&reader->y);
+	return true;
+}
 
 CWorldParts* CWorldParts_Create()
 {
@@ -24,6 +114,7 @@ CWorldParts* CWorldParts_Create()
 		Result->ItemCount = 0;
 		Result->Player = NULL;
 		Result->IgnorePart = NULL;
+		Result->Exit = NoWorldPart;
 		Result->DisableSorting = false;
 		Result->AttchedBoxQuedOrMoving = false;
 		Result->NumPartsMoving = 0;
@@ -52,13 +143,14 @@ void CWorldParts_FindPlayer(CWorldParts* self)
 
 void CWorldParts_ClearPositionalItems(CWorldParts* self)
 {
+	self->Exit = NoWorldPart;
+	//how many parts each group holds is still counted per group, see CWorldParts_GroupCount
 	for (uint8_t i = 0; i < NrOfGroups; i++)
-	{
 		self->PositionalItemsCount[i] = 0;
-		for (uint8_t y = 0; y < NrOfRows; y++)
-			for (uint8_t x = 0; x < NrOfCols; x++)
-				self->PositionalItems[i][y][x] = NoWorldPart;
-	}
+	//the grid holds one part a tile whatever group it belongs to, see PositionalItems
+	for (uint8_t y = 0; y < NrOfRows; y++)
+		for (uint8_t x = 0; x < NrOfCols; x++)
+			self->PositionalItems[y][x] = NoWorldPart;
 }
 
 void CWorldParts_CenterVPOnPlayer(CWorldParts* self)
@@ -150,7 +242,12 @@ void CWorldParts_Remove(CWorldParts* self, int8_t PlayFieldXin, int8_t PlayField
 				if (self->Items[Teller1]->Group != GroupNone)
 				{
 					self->PositionalItemsCount[self->Items[Teller1]->Group]--;
-					self->PositionalItems[self->Items[Teller1]->Group][self->Items[Teller1]->PlayFieldY][self->Items[Teller1]->PlayFieldX] = NoWorldPart;
+					if (self->Exit == CWorldPart_PoolIndex(self->Items[Teller1]))
+						self->Exit = NoWorldPart;
+					//only when the tile still names the part being removed, see PositionalItems
+					else if (self->PositionalItems[self->Items[Teller1]->PlayFieldY][self->Items[Teller1]->PlayFieldX] ==
+					         CWorldPart_PoolIndex(self->Items[Teller1]))
+						self->PositionalItems[self->Items[Teller1]->PlayFieldY][self->Items[Teller1]->PlayFieldX] = NoWorldPart;
 				}
 
 				MarkPrevDrawDirty(self, self->Items[Teller1]);
@@ -184,7 +281,12 @@ void CWorldParts_RemoveType(CWorldParts* self, uint8_t Type)
 				if (self->Items[Teller1]->Group != GroupNone)
 				{
 					self->PositionalItemsCount[self->Items[Teller1]->Group]--;
-					self->PositionalItems[self->Items[Teller1]->Group][self->Items[Teller1]->PlayFieldY][self->Items[Teller1]->PlayFieldX] = NoWorldPart;
+					if (self->Exit == CWorldPart_PoolIndex(self->Items[Teller1]))
+						self->Exit = NoWorldPart;
+					//only when the tile still names the part being removed, see PositionalItems
+					else if (self->PositionalItems[self->Items[Teller1]->PlayFieldY][self->Items[Teller1]->PlayFieldX] ==
+					         CWorldPart_PoolIndex(self->Items[Teller1]))
+						self->PositionalItems[self->Items[Teller1]->PlayFieldY][self->Items[Teller1]->PlayFieldX] = NoWorldPart;
 				}
 
 				MarkPrevDrawDirty(self, self->Items[Teller1]);
@@ -243,7 +345,11 @@ void CWorldParts_Add(CWorldParts* self, CWorldPart* WorldPart)
 		self->Items[self->ItemCount] = WorldPart;
 		if (WorldPart->Group != GroupNone)
 		{
-			self->PositionalItems[WorldPart->Group][WorldPart->PlayFieldY][WorldPart->PlayFieldX] = CWorldPart_PoolIndex(WorldPart);
+			//the exit is held on its own and not in the grid, see Exit
+			if (WorldPart->Group == GroupExit)
+				self->Exit = CWorldPart_PoolIndex(WorldPart);
+			else
+				self->PositionalItems[WorldPart->PlayFieldY][WorldPart->PlayFieldX] = CWorldPart_PoolIndex(WorldPart);
 			self->PositionalItemsCount[WorldPart->Group]++;
 		}
 		self->ItemCount++;
@@ -263,13 +369,13 @@ void CWorldParts_Load(CWorldParts* self, uint8_t levelPack, uint8_t Level)
 	uint8_t maxx = 0;
 	uint8_t maxy = 0;
 	const uint8_t * level = level_data_files[levelPack][Level];
+	//temporary: says what the load was asked for and what it found
+	LevelReader reader;
 	if (level)
 	{
-		while (PLATFORM_READ_BYTE(level) != 0xff)
+		LevelReaderInit(&reader, level);
+		while (LevelReaderNext(&reader, &Type, &X, &Y))
 		{
-			Type = PLATFORM_READ_BYTE(level++);
-			X = PLATFORM_READ_BYTE(level++);
-			Y = PLATFORM_READ_BYTE(level++);
 			if (X < minx)
 				minx = X;
 			if (Y < miny)
@@ -285,11 +391,10 @@ void CWorldParts_Load(CWorldParts* self, uint8_t levelPack, uint8_t Level)
 	{
 		self->DisableSorting = true;
 			
-		while (PLATFORM_READ_BYTE(level) != 0xff)
-		{	
-			Type = PLATFORM_READ_BYTE(level++);		
-			X = PLATFORM_READ_BYTE(level++);
-			Y = PLATFORM_READ_BYTE(level++);
+		//read again from the start, the planes give their parts once each
+		LevelReaderInit(&reader, level);
+		while (LevelReaderNext(&reader, &Type, &X, &Y))
+		{
 			X -= minx;
 			Y -= miny;
 			switch (Type)
@@ -336,11 +441,13 @@ void CWorldParts_Load(CWorldParts* self, uint8_t levelPack, uint8_t Level)
 
 		//a level less tall than the screen leaves an empty strip below it, fill it with
 		//earth under the whole width of the level (with 8x8 tiles that is one row for
+#if PADLEVELROWS
 		//the 15 row levels, with 16x16 tiles every level is taller than the screen)
 		for (Y = maxy - miny + 1; (Y < NrOfRowsVisible) && (Y < NrOfRows); Y++)
 			//X is a byte, the NrOfCols bound also keeps this loop from never ending
 			for (X = 0; (X <= maxx - minx) && (X < NrOfCols); X++)
 				CWorldParts_Add(self, CWorldPart_create(X, Y, IDEarthMiddle, GroupFloor));
+#endif
 
 		self->DisableSorting = false;
 		CWorldParts_Sort(self);
@@ -348,10 +455,27 @@ void CWorldParts_Load(CWorldParts* self, uint8_t levelPack, uint8_t Level)
 		CWorldParts_CenterVPOnPlayer(self);
 	}
 
+#if CHGAME_TIMING
+	//what the board costs and what the load managed to build, see CHGAME_TIMING in Platform.h
+	Platform_Log("load: part %d, board %d, pool %d x %d | pack %d level %d of %d, data %s, %d parts, pool %s, %" PRIu32 " free\n",
+	             (int)sizeof(CWorldPart), (int)sizeof(CWorldParts), (int)MAXWORLDPARTS,
+	             (int)sizeof(CWorldPart),
+	             (int)levelPack, (int)Level, (int)LEVELPACKCOUNT, level ? "there" : "NULL",
+	             (int)self->ItemCount, WorldPartPool ? "there" : "NULL", Platform_FreeHeap());
+#endif
 }
+
+#if CHGAME_TIMING
+//what the per part logic costs a frame, beside what the drawing costs, see CHGAME_TIMING
+static uint32_t dbgMoveUs = 0, dbgMoveCalls = 0;
+#endif
 
 bool CWorldParts_Move(CWorldParts* self)
 {
+#if CHGAME_TIMING
+	const uint32_t tMove = Platform_Micros();
+	dbgMoveCalls++;
+#endif
 	bool result = false;
 	self->NumPartsMoving = 0;
 	self->NumPartsMovingQueued = 0;
@@ -382,6 +506,9 @@ bool CWorldParts_Move(CWorldParts* self)
 			self->NumPartsMovingQueued++;
 			
 	}
+#if CHGAME_TIMING
+	dbgMoveUs += Platform_Micros() - tMove;
+#endif
 	return result;
 }
 
@@ -424,6 +551,20 @@ static CellRow* cellDirty = NULL; //CELLSY rows
 //TileHeight tall, so it lands in both halves and its pixels are walked for each of them.
 //A full row is one window, one push and every part handled once
 #define BANDHEIGHT (TileHeight)
+//Which strips each part reaches, worked out once a frame instead of once a strip. The strip loop
+//used to ask every part of the level whether it belonged in the strip it was composing, which for a
+//full screen repaint is sixteen passes over the whole list, each one reading a Y out of a part that
+//sits wherever the heap put it. One byte a part says it here instead: 0xFF for a part that is not
+//drawn at all this frame, otherwise the first cell row it reaches with the top bit set when it
+//reaches the row under that as well
+static_assert(CELLSY <= 128, "the strip a part starts in has to fit in seven bits");
+#define PARTSTRIP_NONE 0xFF
+static uint8_t* partStrip = NULL;
+#if CHGAME_TIMING
+//what a frame actually draws and pushes, see CHGAME_TIMING in Platform.h
+static uint32_t dbgStrips = 0, dbgSprites = 0, dbgFrames = 0, dbgParts = 0;
+#endif
+
 static uint16_t* bandBuf = NULL; //the strip being composed, WINDOW_WIDTH * BANDHEIGHT pixels
 static int16_t bandX0, bandY0, bandW;               //where that strip sits on screen
 static int16_t lastMinScreenX = -30000, lastMinScreenY = -30000;
@@ -434,6 +575,9 @@ static int16_t lastMinScreenX = -30000, lastMinScreenY = -30000;
 //an encoded background is at most 3 bytes per pixel (a one pixel run every time),
 //so the offsets need 32 bits once the screen is bigger than about 147x147
 #if WINDOW_WIDTH * WINDOW_HEIGHT * 3 < 65536
+//Only for a build that can still be asked for an RGB565 skin, see ONEBITONLY: a one bit only
+//build never reads these and they are the width of the screen twice over
+#if !ONEBITONLY
 typedef uint16_t BgOffset;
 #else
 typedef uint32_t BgOffset;
@@ -441,6 +585,7 @@ typedef uint32_t BgOffset;
 static BgOffset* bgRowOffset = NULL; //WINDOW_HEIGHT rows
 static uint8_t* bgRowUsed = NULL;    //WINDOW_HEIGHT rows
 static const uint8_t* bgIndexed = NULL;
+#endif
 
 //pixels are little endian RGB565, read per byte as the images are uint8_t arrays
 static inline uint16_t ReadPixel(const uint8_t* p)
@@ -552,11 +697,15 @@ static void DrawBuffersDeinit()
 #if SCREENBUFFER == 0
 	free(bandBuf);
 	bandBuf = NULL;
+	free(partStrip);
+	partStrip = NULL;
+#if !ONEBITONLY
 	free(bgRowOffset);
 	bgRowOffset = NULL;
 	free(bgRowUsed);
 	bgRowUsed = NULL;
 	bgIndexed = NULL;
+#endif
 #endif
 }
 
@@ -567,15 +716,28 @@ static void DrawBuffersInit()
 		return;
 	cellDirty = (CellRow*)calloc(CELLSY, sizeof(CellRow));
 	bandBuf = (uint16_t*)malloc(WINDOW_WIDTH * BANDHEIGHT * sizeof(uint16_t));
+	//partStrip only saves the strip loop work, so it is not one of the ones below that have to be there
+	partStrip = (uint8_t*)malloc(MAXWORLDPARTS);
+#if !ONEBITONLY
 	bgRowOffset = (BgOffset*)malloc(WINDOW_HEIGHT * sizeof(BgOffset));
 	bgRowUsed = (uint8_t*)malloc(WINDOW_HEIGHT * sizeof(uint8_t));
-	if (!cellDirty || !bandBuf || !bgRowOffset || !bgRowUsed)
+#endif
+	if (!cellDirty || !bandBuf
+#if !ONEBITONLY
+	    || !bgRowOffset || !bgRowUsed
+#endif
+	   )
 	{
+		//without these the board is not painted at all, so it says so rather than leaving a
+		//blank screen and nothing to go on
+		Platform_Log("DrawBuffersInit: out of heap, %" PRIu32 " free\n", Platform_FreeHeap());
 		DrawBuffersDeinit();
 		return;
 	}
 	//the background index is gone with the old buffers, and the first draw has to paint everything
+#if !ONEBITONLY
 	bgIndexed = NULL;
+#endif
 	lastMinScreenX = -30000;
 	lastMinScreenY = -30000;
 #endif
@@ -611,6 +773,7 @@ void CWorldParts_MarkAllDirty()
 }
 
 #if SCREENBUFFER == 0
+#if !ONEBITONLY
 static void IndexBackground()
 {
 	const uint8_t* data = IMGBackground;
@@ -632,8 +795,50 @@ static void IndexBackground()
 	}
 	bgIndexed = IMGBackground;
 }
+#endif
 
 //the background is a full screen image so it lines up with the strip
+#if ONEBITIMAGES
+//The same, for a background packed one bit a pixel. There is no index to build: every row of such
+//the reader gives the strip its rows one after another, having passed over the ones above it
+//This stands in for the index the run length encoded background builds, see IndexBackground: a
+//plane packed one bit a pixel cannot be entered in the middle, since a row of it may be told to
+//repeat the row above. What is kept instead is the reader itself, carried from one strip to the
+//next, and the row it stands at. The picture does not scroll, so that row is simply a screen row
+//and the strips of a frame are composed from the top down: only the rows between the strip that
+//was done last and this one have to be passed over. Starting from the top for every strip meant
+//decoding the whole picture once per strip, eight and a half times over for a full screen repaint
+static OneBitReader bgPlane;
+static const uint8_t* bgPlaneFor = NULL;             //the picture it was started on
+static int16_t bgPlaneAt = -1;                       //the screen row it stands at, -1 when unset
+//The row it read last, which is also the row it decodes the next one into. A plane packed as rows
+//may say the next row is this one again, so the two cannot be separate buffers
+static uint8_t bgPlaneRow[(WINDOW_WIDTH + 7) / 8];
+
+static PLATFORM_HOT_CODE void BandBackgroundOneBit()
+{
+	const int stride = (WINDOW_WIDTH + 7) / 8;
+	//A strip above the one that was done last cannot be reached by going on, so the picture is
+	//taken from the top again. That is every first strip of a frame, and the picture changing
+	if ((bgPlaneAt < 0) || (bgPlaneAt > bandY0) || (bgPlaneFor != IMGBackground))
+	{
+		OneBitReaderInit(&bgPlane, IMGBackground + ONEBIT_HEADER, OneBitFlags(IMGBackground), false);
+		bgPlaneFor = IMGBackground;
+		bgPlaneAt = 0;
+	}
+	OneBitReaderSkip(&bgPlane, bandY0 - bgPlaneAt, stride, bgPlaneRow);
+	bgPlaneAt = (int16_t)(bandY0 + BANDHEIGHT);
+	for (int16_t r = 0; r < BANDHEIGHT; r++)
+	{
+		OneBitReaderRow(&bgPlane, bgPlaneRow, stride);
+		uint16_t* drow = &bandBuf[r * bandW];
+		//this game keeps no record of what the sprites cover, so the whole strip is painted
+		for (int16_t x = 0; x < bandW; x++)
+			drow[x] = OneBitAt(bgPlaneRow, bandX0 + x) ? ONEBIT_SET : ONEBIT_CLEAR;
+	}
+}
+#endif
+
 static void BandBackground()
 {
 	if (!IMGBackground)
@@ -643,6 +848,14 @@ static void BandBackground()
 		return;
 	}
 	//a new skin brings a new background
+#if ONEBITIMAGES
+	if (skinImagesOneBit)
+	{
+		BandBackgroundOneBit();
+		return;
+	}
+#endif
+#if !ONEBITONLY
 	if (bgIndexed != IMGBackground)
 		IndexBackground();
 
@@ -688,10 +901,51 @@ static void BandBackground()
 			data += run ? 3 : 1 + count * 2;
 		}
 	}
+#endif
 }
 
 //blit a 16x16 sprite that sits at screen position sx,sy, clipped to the strip
-static void BandSprite(int16_t sx, int16_t sy, const uint8_t* image)
+#if ONEBITIMAGES
+//The same, for a sprite packed one bit a pixel. The frames of a sheet are stacked down it, so the
+//rows the strip wants are that many tiles further down, and the rows before them are passed over
+//without their pixels being looked at
+static PLATFORM_HOT_CODE void BandSpriteOneBit(int16_t sx, int16_t sy, const uint8_t* image, uint8_t frame,
+                             bool keyed, int16_t r0, int16_t r1, int16_t c0, int16_t c1)
+{
+	const int stride = (OneBitWidth(image) + 7) / 8;
+	const int flags = OneBitFlags(image);
+	const int maskAt = OneBitMaskAt(image);
+	const bool useMask = keyed && (maskAt != 0);
+	uint8_t rowPixels[ONEBIT_MAX_STRIDE];
+	uint8_t rowMask[ONEBIT_MAX_STRIDE];
+	const int first = frame * TileHeight + r0;
+	OneBitReader plane;
+	OneBitReaderInit(&plane, image + ONEBIT_HEADER, flags, false);
+	OneBitReaderSkip(&plane, first, stride, rowPixels);
+	OneBitReader maskPlane;
+	if (useMask)
+	{
+		OneBitReaderInit(&maskPlane, image + maskAt, flags, true);
+		OneBitReaderSkip(&maskPlane, first, stride, rowMask);
+	}
+	for (int16_t r = r0; r < r1; r++)
+	{
+		OneBitReaderRow(&plane, rowPixels, stride);
+		if (useMask)
+			OneBitReaderRow(&maskPlane, rowMask, stride);
+		uint16_t* drow = &bandBuf[(sy + r - bandY0) * bandW + (sx + c0 - bandX0)];
+		for (int16_t c = c0; c < c1; c++)
+		{
+			//a clear mask bit is a pixel the sprite does not cover
+			if (useMask && !OneBitAt(rowMask, c))
+				continue;
+			drow[c - c0] = OneBitAt(rowPixels, c) ? ONEBIT_SET : ONEBIT_CLEAR;
+		}
+	}
+}
+#endif
+
+static void BandSprite(int16_t sx, int16_t sy, const uint8_t* image, uint8_t frame)
 {
 	if (!image)
 		return;
@@ -707,6 +961,13 @@ static void BandSprite(int16_t sx, int16_t sy, const uint8_t* image)
 	if (r1 > TileHeight) r1 = TileHeight;
 	if (c0 < 0) c0 = 0;
 	if (c1 > TileWidth) c1 = TileWidth;
+#if ONEBITIMAGES
+	if (skinImagesOneBit)
+	{
+		BandSpriteOneBit(sx, sy, image, frame, true, r0, r1, c0, c1);
+		return;
+	}
+#endif
 	//a visible row at a time, the transparent pixels of the sprite are left as they are
 	for (int16_t r = r0; r < r1; r++)
 	{
@@ -786,6 +1047,39 @@ bool CWorldParts_DrawBoard(CWorldParts* self)
 		}
 	}
 
+#if CHGAME_TIMING
+	dbgFrames++;
+	dbgParts = self->ItemCount;
+	if (dbgFrames >= 60)
+	{
+		Platform_Log("DrawBoard: %" PRIu32 " frames, %" PRIu32 " parts, %" PRIu32 " sprites, %" PRIu32 " strips, move %" PRIu32 " us a call, strip index %s\n",
+		             dbgFrames, dbgParts, dbgSprites, dbgStrips,
+		             dbgMoveCalls ? (dbgMoveUs / dbgMoveCalls) : 0,
+		             partStrip ? "there" : "none");
+		dbgFrames = dbgSprites = dbgStrips = 0;
+		dbgMoveUs = dbgMoveCalls = 0;
+	}
+#endif
+
+	//Which strips each part reaches, see partStrip. This is the work the strip loop below used to
+	//do again for every strip: reading a part's Y out of wherever the heap put it
+	for (uint16_t Teller = 0; partStrip && (Teller < self->ItemCount); Teller++)
+	{
+		CWorldPart* Part = self->Items[Teller];
+		const int16_t sy = Part->Y - msy;
+		if ((sy + TileHeight <= 0) || (sy >= WINDOW_HEIGHT) || (Part == self->IgnorePart))
+		{
+			partStrip[Teller] = PARTSTRIP_NONE;
+			continue;
+		}
+		//a part hanging off the top of the screen reaches row 0 and no other
+		const int16_t r0 = (sy < 0) ? 0 : (int16_t)(sy / TileHeight);
+		int16_t r1 = (int16_t)((sy + TileHeight - 1) / TileHeight);
+		if (r1 >= CELLSY)
+			r1 = CELLSY - 1;
+		partStrip[Teller] = (uint8_t)(r0 | ((r1 > r0) ? 0x80 : 0));
+	}
+
 	//compose and push one strip per row that has dirty cells
 	for (int16_t cy = 0; cy < CELLSY; cy++)
 	{
@@ -814,17 +1108,44 @@ bool CWorldParts_DrawBoard(CWorldParts* self)
 
 		bandY0 = cy * TileHeight;
 
+#if CHGAME_TIMING
+		uint32_t tSection = Platform_Micros();
+#endif
 		BandBackground();
+#if CHGAME_TIMING
+		bandBgUs += Platform_Micros() - tSection;
+		tSection = Platform_Micros();
+#endif
 
 		//the parts, in the order the list is sorted in so layering is kept
 		for (uint16_t Teller = 0; Teller < self->ItemCount; Teller++)
 		{
 			CWorldPart* Part = self->Items[Teller];
-			int16_t sy = Part->Y - msy;
-			if ((sy + TileHeight <= bandY0) || (sy >= bandY0 + BANDHEIGHT) || (Part == self->IgnorePart))
-				continue;
-			BandSprite(Part->X - msx, sy, CWorldPart_SpriteData(Part));
+			if (partStrip)
+			{
+				//the row this part starts in, and whether it reaches the one after it
+				const uint8_t strip = partStrip[Teller];
+				const uint8_t first = (uint8_t)(strip & 0x7F);
+				if ((strip == PARTSTRIP_NONE) ||
+				    ((first != (uint8_t)cy) && (!(strip & 0x80) || (first + 1 != cy))))
+					continue;
+			}
+			else
+			{
+				const int16_t sy = Part->Y - msy;
+				if ((sy + TileHeight <= bandY0) || (sy >= bandY0 + BANDHEIGHT) ||
+				    (Part == self->IgnorePart))
+					continue;
+			}
+#if CHGAME_TIMING
+			dbgSprites++;
+#endif
+			BandSprite(Part->X - msx, Part->Y - msy, CWorldPart_SpriteData(Part), CWorldPart_SpriteFrame(Part));
 		}
+#if CHGAME_TIMING
+		//the floor and the parts, which is everything drawn over the background
+		bandSpriteUs += Platform_Micros() - tSection;
+#endif
 
 #if LOVYANGFX
 		//true: bandBuf holds plain RGB565, the library puts it in display order.
@@ -834,6 +1155,9 @@ bool CWorldParts_DrawBoard(CWorldParts* self)
 		SCREEN.pushPixels(bandBuf, bandW * BANDHEIGHT);
 #endif
 		painted = true;
+#if CHGAME_TIMING
+		dbgStrips++;
+#endif
 	}
 
 	if (painted)
@@ -848,12 +1172,17 @@ CWorldPart* CWorldParts_PartAtPosition(CWorldParts* self, int8_t PlayFieldXin, i
 	if ((PlayFieldYin < 0) || (PlayFieldYin >= NrOfRows) || (PlayFieldXin < 0) || (PlayFieldXin >= NrOfCols))
 		return NULL;
 
-	for (uint8_t Teller = 0; Teller < NrOfGroups; Teller++)
-	{
-		uint16_t Index = self->PositionalItems[Teller][PlayFieldYin][PlayFieldXin];
-		if ((Index != NoWorldPart) && (&WorldPartPool[Index] != self->IgnorePart))
-			return &WorldPartPool[Index];
-	}
+	//The exit first, the way the old grid per group reached it first. It is not in the grid, and a
+	//part standing on its tile is in the grid, so both are still answered for
+	if ((self->Exit != NoWorldPart) &&
+	    (WorldPartPool[self->Exit].PlayFieldX == PlayFieldXin) &&
+	    (WorldPartPool[self->Exit].PlayFieldY == PlayFieldYin) &&
+	    (&WorldPartPool[self->Exit] != self->IgnorePart))
+		return &WorldPartPool[self->Exit];
+	//one part a tile, see PositionalItems
+	const uint16_t Index = self->PositionalItems[PlayFieldYin][PlayFieldXin];
+	if ((Index != NoWorldPart) && (&WorldPartPool[Index] != self->IgnorePart))
+		return &WorldPartPool[Index];
 
 	return NULL;
 }
@@ -872,12 +1201,16 @@ uint8_t CWorldParts_TypeAtPosition(CWorldParts* self, int8_t PlayFieldXin, int8_
 	if ((PlayFieldYin < 0) || (PlayFieldYin >= NrOfRows) || (PlayFieldXin < 0) || (PlayFieldXin >= NrOfCols))
 		return 0;
 
-	for(uint8_t Teller = 0; Teller < NrOfGroups; Teller++)
-	{
-		uint16_t Index = self->PositionalItems[Teller][PlayFieldYin][PlayFieldXin];
-		if ((Index != NoWorldPart) && (&WorldPartPool[Index] != self->IgnorePart))
-			return WorldPartPool[Index].Type;
-	}
+	//the exit first, see CWorldParts_PartAtPosition
+	if ((self->Exit != NoWorldPart) &&
+	    (WorldPartPool[self->Exit].PlayFieldX == PlayFieldXin) &&
+	    (WorldPartPool[self->Exit].PlayFieldY == PlayFieldYin) &&
+	    (&WorldPartPool[self->Exit] != self->IgnorePart))
+		return WorldPartPool[self->Exit].Type;
+	//one part a tile, see PositionalItems
+	const uint16_t Index = self->PositionalItems[PlayFieldYin][PlayFieldXin];
+	if ((Index != NoWorldPart) && (&WorldPartPool[Index] != self->IgnorePart))
+		return WorldPartPool[Index].Type;
 
 	return 0;
 }

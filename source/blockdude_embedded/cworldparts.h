@@ -30,9 +30,23 @@ struct CWorldParts {
 	CWorldPart* Items[MAXWORLDPARTS];
 	//pool index (WorldPartPool) of the part of a group on a tile, NoWorldPart when there is none.
 	//Half the size of a pointer grid and still a direct lookup
-	uint16_t PositionalItems[NrOfGroups][NrOfRows][NrOfCols];
+	//Pool index (WorldPartPool) of the part on a tile, NoWorldPart when there is none. Half the size
+	//of a pointer grid and still a direct lookup.
+	//One grid and not one per group: no tile ever holds parts of two different groups. No level of
+	//either pack places two there, a move clears the tile it leaves before taking the next, and the
+	//movement rules treat a part of any group as blocking. Checked by playing the carry and climb
+	//with a grid per group and a report on any tile holding two, which never fired.
+	//Four grids cost 5152 bytes where one costs 1288, and on a device with 20k of ram that was the
+	//difference between the part pool fitting and every level coming up empty
+	uint16_t PositionalItems[NrOfRows][NrOfCols];
 	CWorldPart* Player;
 	CWorldPart* IgnorePart;
+	//The exit, which is kept out of PositionalItems. A level holds exactly one and it never moves,
+	//and the player ends the level by standing on its tile: with one part a tile the player would
+	//overwrite it there and the exit would be lost from the grid for good. The lookups below answer
+	//for this before they read the grid, which is the order the old grid per group gave them anyway
+	//since the exit is the first group. NoWorldPart while there is none
+	uint16_t Exit;
 	//Only boxes queue moves, when picked up or dropped, and only the one carried box at a
 	//time, so there is one queue for the whole board instead of one in every part
 	SPoint MoveQue[MOVEQUESIZE];

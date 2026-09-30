@@ -40,11 +40,51 @@
 #endif
 
 //Only one skin fits in the flash next to the game: -1 = every skin, n = only skin n, see
-//FORCESKIN in defines.h. A 1 bpp buffer picks the black & white skin itself. A build can
-//still set it itself
+//FORCESKIN in defines.h. The black & white skin is the one that is taken: its pictures are
+//packed one bit a pixel rather than kept as RGB565, which is what makes the game fit at all.
+//A 1 bpp buffer picks that skin itself, and a build can still ask for another one
 #if !defined(FORCESKIN) && (SCREENBUFFER != 1)
-#define FORCESKIN 0
+#define FORCESKIN SKINBLACKWHITE
 #endif
+
+//The device has room for about fourteen of Blockman's levels beside the game and none for Davy,
+//so a build made here rather than by tools/build_releases.py takes the first eleven of Blockman,
+//which is what the first of the two release binaries holds
+#ifndef LEVELPACKS
+#define LEVELPACKS LP_blockman
+#endif
+#ifndef MAXLEVELS_blockman
+#define MAXLEVELS_blockman 11
+#endif
+
+//The earth that fills the rows under a level shorter than the screen is left off here. It is one
+//row on the 15 row levels, 25 parts of the pool and 800 bytes, and this device has none to spare:
+//with them the pool left 80 bytes free, too little for the 322 byte strip index the board draws
+//with or the 384 byte cell the text is built in, so both fell back to their slow paths and a frame
+//with the debug text on it took 40 ms instead of 4. The bottom row shows the background instead
+#ifndef PADLEVELROWS
+#define PADLEVELROWS 0
+#endif
+
+//The pool of world parts is the largest single thing the game asks the heap for and this device has
+//20k of ram for everything, so it is sized from the busiest level of the packs the build actually
+//ships rather than from a round number no level reaches. Blockman's levels run from 183 to 301
+//parts against the 384 the pool used to ask for, and at 36 bytes a part those 83 spare slots were
+//nearly 3k of a heap that had none to give: the pool failed and every level came up empty.
+//LEVELPACKMAXPARTS is counted by tools/convert_levels.py from what lies in assets/levels
+#ifndef MAXWORLDPARTS
+#define MAXWORLDPARTS LEVELPACKMAXPARTS
+#endif
+
+//The pixel loops are put in ram rather than run from flash. The core fetches from flash with wait
+//states and does not guess at branches, so a short loop with a test in it runs several times slower
+//there: the byte swap in writePixels costs about 9 cycles a pixel while the same loops cost 60 to
+//110 from flash, for work that is not much different. There is no .highcode section in this board's
+//linker script, but .data is loaded into ram from flash at startup, so a function put there is
+//copied with it and runs from ram. noinline as well, or a static loop called from one place is
+//folded into its caller and lands back in flash with it, the section asking for nothing. Only the
+//innermost loops are marked, the ram is needed for the level
+#define PLATFORM_HOT_CODE __attribute__((section(".data.hotcode"), noinline))
 
 //What the game draws with, shared by the display and the screen buffer: rectangles and the
 //text of the GLCD font, with the arguments LovyanGFX takes

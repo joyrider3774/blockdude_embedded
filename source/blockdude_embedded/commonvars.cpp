@@ -11,7 +11,15 @@ const uint8_t *IMGBackground = NULL, * IMGIntro1 = NULL, *IMGIntro2 = NULL, *IMG
 
 uint16_t ColorWhite, ColorBlack;
 const char* skins[] = { "Default", "Tech", "Flat", "Ti-83", "Kenney"};
-const char* LevelPacks[] = {"Blockman", "Davy"};
+//only the packs LEVELPACKS asks for, in the order the lookup table in levels.h has them
+const char* LevelPacks[] = {
+#if LEVELPACKS & LP_blockman
+	"Blockman",
+#endif
+#if LEVELPACKS & LP_davy
+	"Davy",
+#endif
+};
 
 uint8_t GameState = GSIntroInit;
 int8_t SelectedLevel = 0;

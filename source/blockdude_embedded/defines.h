@@ -59,6 +59,19 @@
 #endif
 //1 when the images of skin n are part of the build
 #define SKINBUILT(n) ((FORCESKIN < 0) || (FORCESKIN == (n)))
+
+//1 when the black & white skin is in the build, whose pictures are packed one bit a pixel
+//by tools/onebit.py and drawn by the routines in onebitimage.cpp rather than as RGB565. It
+//shows two colours, and keeping each of them in sixteen bits costs both flash and the work
+//of writing a colour per pixel. Every skin can be in the build here and picked in the
+//options, so which kind a picture is cannot be known at build time: skinImagesOneBit says
+#define ONEBITIMAGES SKINBUILT(SKINBLACKWHITE)
+
+//1 when the black & white skin is the only one in the build. Every picture is then one bit a pixel
+//and the paths that read RGB565 are dead: a build that is only ever going to draw one bit pictures
+//need not carry the index the run length encoded background is read through, which is a row table
+//the width of the screen
+#define ONEBITONLY (ONEBITIMAGES && (FORCESKIN == SKINBLACKWHITE))
 #define WINDOW_WIDTH 128
 #define WINDOW_HEIGHT 128
 #define HALFWINDOWWIDTH 64
@@ -102,8 +115,112 @@
 //340, and reserving the whole grid would cost 15k of ram for slots nothing uses.
 //This leaves 44 spare. Add a denser level and CWorldParts_Add drops what does not
 //fit, so raise this if a level ever comes up short of tiles
+//The pool of world parts, the largest single thing the game asks the heap for. The device header
+//may ask for fewer, which a device with little ram has to: it can size itself from
+//LEVELPACKMAXPARTS, the busiest level of the packs it ships, which is checked below where that
+//is known
+#ifndef MAXWORLDPARTS
 #define MAXWORLDPARTS 384
+#endif
 #define MaxLevelPacks 2
+
+//1 = the rows between the bottom of a level and the bottom of the screen are filled with earth,
+//so a level shorter than the display has ground under it rather than background. 0 = they are left
+//alone. Every filled tile is a world part out of the pool, which on a small device is ram it has
+//not got, see CWorldParts_Load and LP_FILL below. A build can set it itself
+#ifndef PADLEVELROWS
+#define PADLEVELROWS 1
+#endif
+
+//>>> written by tools/convert_levels.py from assets/levels, do not edit by hand
+//LEVELPACKS: the level packs that are built in, an LP_ bit each (the size is what the
+//pack takes in flash). All of them unless the device header or the build picks fewer; a
+//pack that is left out takes no flash and is not offered in the game
+#define LP_blockman (1ul <<  0)    //21 levels,   9609 bytes
+#define LP_davy     (1ul <<  1)    // 4 levels,   1643 bytes
+#define LP_ALL ((1ul << 2) - 1)
+#ifndef LEVELPACKS
+#define LEVELPACKS LP_ALL
+#endif
+#if (LEVELPACKS & LP_ALL) == 0
+#error "LEVELPACKS has to leave at least one level pack in"
+#endif
+//how many that comes to, which is how many the game offers
+#define LEVELPACKCOUNT (((LEVELPACKS & LP_blockman) != 0) + ((LEVELPACKS & LP_davy) != 0))
+
+//FIRSTLEVELPERPACK and MAXLEVELSPERPACK: the run of levels a pack keeps, for a device
+//that has not the flash for a whole one. The levels of a pack are in the order they are
+//played, so a build takes MAXLEVELSPERPACK of them starting at FIRSTLEVELPERPACK and the
+//rest are left out; 0 levels means all of them from the first one on. Several builds with
+//runs that follow one another cover a whole pack between them
+#ifndef FIRSTLEVELPERPACK
+#define FIRSTLEVELPERPACK 0
+#endif
+#ifndef MAXLEVELSPERPACK
+#define MAXLEVELSPERPACK 0
+#endif
+//A pack may be given a run of its own, and takes the one above when it is not. That is what
+//lets one build hold the end of a long pack and the whole of a short one
+#ifndef FIRSTLEVEL_blockman
+#define FIRSTLEVEL_blockman FIRSTLEVELPERPACK
+#endif
+#ifndef MAXLEVELS_blockman
+#define MAXLEVELS_blockman MAXLEVELSPERPACK
+#endif
+#ifndef FIRSTLEVEL_davy
+#define FIRSTLEVEL_davy FIRSTLEVELPERPACK
+#endif
+#ifndef MAXLEVELS_davy
+#define MAXLEVELS_davy MAXLEVELSPERPACK
+#endif
+//1 while level n of a pack is in the build, counted from 0
+#define LEVELBUILT_AT(n, first, most) (((n) >= (first)) && \
+                                      (((most) == 0) || ((n) < (first) + (most))))
+//of a pack of n levels, how many are kept
+#define LEVELSKEPT_AT(n, first, most) (((n) <= (first)) ? 0 : \
+                                      ((((most) == 0) || ((n) - (first) <= (most))) \
+                                       ? (n) - (first) : (most)))
+//the longest of the runs, which is what the lookup table in levels.h is sized by. It is
+//written after the packs below, since it is the packs it is the largest of
+//A pack the run leaves nothing of would be offered with no levels in it, so this says
+//so at build time instead: a build starting past the end of a pack leaves it out too
+#define LEVELBUILT_blockman(n) LEVELBUILT_AT(n, FIRSTLEVEL_blockman, MAXLEVELS_blockman)
+#define LEVELSKEPT_blockman LEVELSKEPT_AT(21, FIRSTLEVEL_blockman, MAXLEVELS_blockman)
+#if (LEVELPACKS & LP_blockman) && (LEVELSKEPT_blockman == 0)
+#error "the run leaves nothing of blockman, take that pack out of LEVELPACKS"
+#endif
+#define LEVELBUILT_davy(n) LEVELBUILT_AT(n, FIRSTLEVEL_davy, MAXLEVELS_davy)
+#define LEVELSKEPT_davy LEVELSKEPT_AT(4, FIRSTLEVEL_davy, MAXLEVELS_davy)
+#if (LEVELPACKS & LP_davy) && (LEVELSKEPT_davy == 0)
+#error "the run leaves nothing of davy, take that pack out of LEVELPACKS"
+#endif
+//the longest run of all, which is how wide the lookup table in levels.h has to be
+#define LEVELSPERPACK ((LEVELSKEPT_blockman) > LEVELSKEPT_davy ? (LEVELSKEPT_blockman) : LEVELSKEPT_davy)
+
+//The busiest level each pack has, counted the same way encode_level does. The pool of world
+//parts is the largest single thing the game asks the heap for and no level fills the grid, so
+//a build wants no more slots than the packs it holds can fill, see MAXWORLDPARTS
+//A level is padded with earth from its bottom row down to the bottom of the screen, see
+//CWorldParts_Load, so the parts it makes depend on how many rows the device shows. This is
+//that padding for a level whose bounding box is w by h tiles
+#define LP_ROWSSHOWN ((NrOfRowsVisible < NrOfRows) ? NrOfRowsVisible : NrOfRows)
+#define LP_FILL(w, h) ((PADLEVELROWS && (LP_ROWSSHOWN > (h))) \
+                       ? ((LP_ROWSSHOWN - (h)) * (((w) < NrOfCols) ? (w) : NrOfCols)) : 0)
+//the entries of each level plus that padding, the largest of them per pack
+#define LP_PARTS_blockman LP_PARTS_MAX(LP_PARTS_MAX(LP_PARTS_MAX(LP_PARTS_MAX(LP_PARTS_MAX(LP_PARTS_MAX(LP_PARTS_MAX(LP_PARTS_MAX(LP_PARTS_MAX(LP_PARTS_MAX(LP_PARTS_MAX(LP_PARTS_MAX(LP_PARTS_MAX(LP_PARTS_MAX(LP_PARTS_MAX(LP_PARTS_MAX(LP_PARTS_MAX(LP_PARTS_MAX(LP_PARTS_MAX(LP_PARTS_MAX(LP_PARTS_MAX(0, 266 + LP_FILL(25, 15)), 276 + LP_FILL(25, 15)), 297 + LP_FILL(25, 15)), 238 + LP_FILL(25, 15)), 240 + LP_FILL(25, 15)), 266 + LP_FILL(25, 15)), 242 + LP_FILL(25, 15)), 183 + LP_FILL(27, 17)), 269 + LP_FILL(25, 16)), 253 + LP_FILL(27, 19)), 301 + LP_FILL(28, 20)), 230 + LP_FILL(25, 19)), 203 + LP_FILL(28, 19)), 221 + LP_FILL(27, 19)), 246 + LP_FILL(25, 18)), 234 + LP_FILL(25, 19)), 256 + LP_FILL(27, 19)), 216 + LP_FILL(25, 19)), 261 + LP_FILL(28, 19)), 214 + LP_FILL(25, 17)), 230 + LP_FILL(28, 19))
+#define LP_PARTS_davy     LP_PARTS_MAX(LP_PARTS_MAX(LP_PARTS_MAX(LP_PARTS_MAX(0, 315 + LP_FILL(25, 15)), 181 + LP_FILL(25, 15)), 192 + LP_FILL(27, 23)), 302 + LP_FILL(25, 17))
+
+//How many parts the busiest level of the packs this build holds has. A pack that is left out
+//counts for nothing. LP_PARTS_MAX is a function and not a macro on purpose: a macro naming
+//its first argument twice doubles the text at every step, which with many packs puts the
+//compiler out of memory. constexpr keeps it usable where a constant is wanted
+static inline constexpr int LP_PARTS_MAX(int a, int b) { return (a > b) ? a : b; }
+#define LP_PARTS_OF(p) (((LEVELPACKS & LP_##p) != 0) ? LP_PARTS_##p : 0)
+#define LEVELPACKMAXPARTS LP_PARTS_MAX(LP_PARTS_MAX(0, LP_PARTS_OF(blockman)), LP_PARTS_OF(davy))
+//<<<
+
+//The pool has to take the busiest level of the packs this build ships
+static_assert(MAXWORLDPARTS >= LEVELPACKMAXPARTS, "a level of a pack in this build would not fit the pool");
 #define MaxLenLevelPackName 6
 
 #define IDEmpty 1
@@ -146,6 +263,9 @@
 #define AnimBaseRight 4
 #define AnimBaseLeftJump 8
 #define AnimBaseRightJump 12
+//AnimPhase and PrevDrawAnimPhase are four bits each in CWorldPart, so the highest phase a part
+//can reach has to stay inside them. 4 is the most any part sets AnimPhases to
+static_assert(AnimBaseRightJump + 4 - 1 <= 15, "an anim phase would not fit its four bits");
 
 #define errNoError 0
 #define errNoPlayer 1

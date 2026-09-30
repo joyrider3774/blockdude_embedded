@@ -92,12 +92,17 @@ file(GLOB LGFX_SOURCES CONFIGURE_DEPENDS
     "${LOVYANGFX_DIR}/src/lgfx/v1/panel/Panel_FrameBufferBase.cpp"
     "${LOVYANGFX_DIR}/src/lgfx/v1/platforms/sdl/*.cpp")
 
+# Anything else the build was asked to define, as a semicolon separated list of NAME=VALUE. The
+# switches above are named one by one because they are validated; this carries the rest, so a
+# temporary switch can be built without editing this file. See --define in tools/build_releases.py
+set(EXTRA_DEFINES "" CACHE STRING "extra compile definitions, NAME=VALUE, semicolon separated")
+
 # the static SDL2 library, so the exe needs no SDL2.dll next to it
 find_package(SDL2 REQUIRED COMPONENTS SDL2-static)
 
 # WIN32: a Windows (GUI) program, started it opens no console window next to the game's own
 add_executable(blockdude WIN32 ${GAME_SOURCES} ${LGFX_SOURCES})
-target_compile_definitions(blockdude PRIVATE PLATFORM_SDL LGFX_SDL SCREENBUFFER=${SCREENBUFFER} DITHERING=${DITHERING} FPSLOCK=${FPSLOCK} FORCEDEBUG=${FORCEDEBUG} IMAGESET=${IMAGESET} FORCESKIN=${FORCESKIN} WINDOW_SCALE=${WINDOW_SCALE})
+target_compile_definitions(blockdude PRIVATE PLATFORM_SDL LGFX_SDL SCREENBUFFER=${SCREENBUFFER} DITHERING=${DITHERING} FPSLOCK=${FPSLOCK} FORCEDEBUG=${FORCEDEBUG} IMAGESET=${IMAGESET} FORCESKIN=${FORCESKIN} WINDOW_SCALE=${WINDOW_SCALE} ${EXTRA_DEFINES})
 target_include_directories(blockdude PRIVATE "${GAME_DIR}" "${LOVYANGFX_DIR}/src")
 target_link_libraries(blockdude PRIVATE SDL2::SDL2-static)
 
