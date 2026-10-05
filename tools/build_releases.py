@@ -108,8 +108,8 @@ TARGETS = [
     #a binary, so its 21 are spread evenly over two. Davy is left off the device. The levels
     #are kept as three run length encoded planes, see tools/convert_levels.py; LP_blockman is
     #bit 0, written out as a number because that is what the build hands over
-    ("CHGame", "_1", {"LEVELPACKS": 1, "MAXLEVELS_blockman": 11}),    #Blockman 1-11
-    ("CHGame", "_2", {"LEVELPACKS": 1, "FIRSTLEVEL_blockman": 11}),   #Blockman 12-21
+    ("CHGame", "_1", {"CHGAME_SAVE_VARIANT": 1, "LEVELPACKS": 1, "MAXLEVELS_blockman": 11}),    #Blockman 1-11
+    ("CHGame", "_2", {"CHGAME_SAVE_VARIANT": 2, "LEVELPACKS": 1, "FIRSTLEVEL_blockman": 11}),   #Blockman 12-21
     ("PyBadge", "", {}),
     ("PyGamer", "", {}),
     ("PicoSystem", "", {}),
@@ -209,7 +209,7 @@ DEVICES = {
         "uf2": (0x4000, 0x55114460),
     },
     "PicoSystem": {
-        "fqbn": "rp2040:rp2040:generic:flash=16777216_0,boot2=boot2_w25q080_2_padded_checksum,freq=133,usbstack=picosdk,opt=Small",
+        "fqbn": "rp2040:rp2040:generic:flash=16777216_0,boot2=boot2_w25q080_2_padded_checksum,freq=125,usbstack=picosdk,opt=Small",
         "outputs": ["uf2"],
     },
     "Explorer": {
