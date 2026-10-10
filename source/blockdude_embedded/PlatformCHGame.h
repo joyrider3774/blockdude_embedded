@@ -45,6 +45,13 @@
 #if CARDIMAGES
 #define PLATFORM_HAS_CARD 1
 
+//1 = a run of whole blocks is fetched off the card with one multi-block command, see the card
+//stream in PlatformCHGame.cpp. 0 goes back to a command a block, which is what the measurement
+//it is worth was made against
+#ifndef CARD_MULTIBLOCK
+#define CARD_MULTIBLOCK 1
+#endif
+
 //How much RAM the art read off the card is kept in. An arena is static, so it comes out of the
 //same 18416 bytes the heap does, and this game had none to give until CWorldPart lost its two
 //pointers for pool indexes (28 bytes to 22, see CWorldPart.h), which handed back about 1900.
