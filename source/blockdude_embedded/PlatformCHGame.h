@@ -45,20 +45,26 @@
 #if CARDIMAGES
 #define PLATFORM_HAS_CARD 1
 
-//No arena: every row of art is read off the card as it is drawn and none of it is kept.
-//An arena is static, so it comes out of the same 18416 bytes the heap does, and this game has
-//none to give. Its pool is MAXWORLDPARTS parts of a level and its strip buffer is a whole cell
-//row (128 by 16 pixels, 4096 bytes), which together come to about 14200 bytes; the flash build
-//runs with 228 bytes of heap left over. Packing CWorldPart from 32 bytes to 28 (see
-//CWorldPart.h) is what made even this fit, and leaving the run length index tables out of a
-//card build (see BgOffset in CWorldParts.cpp) handed back a few hundred more, so what is free
-//in a level is about 770 bytes.
-//512 of arena was measured against none: 3.89 frames a second against 3.78 while the whole
-//screen repaints, for half the margin. The board is drawn from two dozen different sheets and
-//a few hundred bytes hold four of them, so there is little to win here. What a card build
-//does win is that a tile is read whole in one card read, see BandSprite
+//How much RAM the art read off the card is kept in. An arena is static, so it comes out of the
+//same 18416 bytes the heap does, and this game had none to give until CWorldPart lost its two
+//pointers for pool indexes (28 bytes to 22, see CWorldPart.h), which handed back about 1900.
+//Measured on the device with the frame report (CHGAME_TIMING), scrolling Blockman level 1:
+//without an arena a frame was 36 ms at the median and 134 ms at worst, and drawing the sprites
+//was 73% of it, every tile being read off the card as it was drawn. With 1024 the same scroll
+//is 18 ms at the median and 59 ms at worst, and the sprites are a quarter of what they were.
+//1536 holds a few more of the sheets. It measured no better than 1024 on the one scroll it was
+//tried on, but the two runs were played by hand and are not the same movement twice, so that
+//is not evidence against it; it leaves about 490 bytes of heap where 1024 leaves 1004, and
+//nothing is asked of the heap once the game is running
 #ifndef CARDARENA
-#define CARDARENA 0
+#define CARDARENA 1536
+#endif
+
+//The background is drawn as one colour rather than read off the card, see FLATBACKGROUND in
+//defines.h. It is the one picture a scrolling board would otherwise read whole off the card
+//every frame, and there is no RAM here to keep it in
+#ifndef FLATBACKGROUND
+#define FLATBACKGROUND 1
 #endif
 #endif
 

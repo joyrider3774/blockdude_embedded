@@ -355,7 +355,7 @@ void CWorldParts_RemoveType(CWorldParts* self, uint8_t Type)
 			{
 				if (Type == IDPlayer)
 				{
-					self->Items[Teller1]->Player = NULL;
+					self->Items[Teller1]->PlayerIx = NoWorldPart;
 					self->Player = NULL;
 				}
 				
@@ -585,7 +585,7 @@ bool CWorldParts_Move(CWorldParts* self)
 			self->NumPartsMoving++;
 		}
 		
-		if (WorldParts->Items[Teller]->Player)
+		if (WorldParts->Items[Teller]->PlayerIx != NoWorldPart)
 		{
 			self->NumPartsAttachedToPlayer++;
 
@@ -928,15 +928,131 @@ static PLATFORM_HOT_CODE void BandBackgroundOneBit()
 	{
 		OneBitReaderRow(&bgPlane, bgPlaneRow, stride);
 		uint16_t* drow = &bandBuf[r * bandW];
-		//this game keeps no record of what the sprites cover, so the whole strip is painted
+		//what an opaque tile paints over is not unpacked at all, see BandFindCovered
+		const int16_t hide0 = covX0[r], hide1 = covX1[r];
 		for (int16_t x = 0; x < bandW; x++)
-			drow[x] = OneBitAt(bgPlaneRow, bandX0 + x) ? ONEBIT_SET : ONEBIT_CLEAR;
+		{
+			const int16_t sx = bandX0 + x;
+			if ((hide1 > hide0) && (sx >= hide0) && (sx < hide1))
+				continue;
+			drow[x] = OneBitAt(bgPlaneRow, sx) ? ONEBIT_SET : ONEBIT_CLEAR;
+		}
 	}
 }
 #endif
 
+//Screen columns of the strip that an opaque tile will cover completely, per row of the strip.
+//Those pixels of the background are never seen, so they are not drawn - and on a card build
+//they are not even read, which is what a full screen background costs most of. covX1 <= covX0
+//means nothing is covered
+static int16_t covX0[BANDHEIGHT], covX1[BANDHEIGHT];
+//1 while any row of this strip has something covered, so the cheap whole strip read is still
+//taken when a strip is clear
+static bool covAny = false;
+
+static void BandClearCovered()
+{
+	for (int16_t r = 0; r < BANDHEIGHT; r++)
+		covX0[r] = covX1[r] = 0;
+	covAny = false;
+}
+
+//The longest unbroken run of covered tiles across the strip, worked out per row because a row
+//of tiles only lines up with the strip while the viewport is not scrolled between two tile
+//rows. Only a run is looked for: the ground of a level is one area, and this has to stay cheap
+//next to the pixels it saves.
+//The tiles are read straight out of the positional grid, which already holds the part on every
+//tile, so nothing of this has to be kept between frames
+static void BandFindCovered(CWorldParts* self, int16_t msx, int16_t msy)
+{
+	BandClearCovered();
+	const int16_t tx0 = (bandX0 + msx) / TileWidth;
+	const int16_t tx1 = (bandX0 + bandW - 1 + msx) / TileWidth;
+	int16_t lastTy = -1;
+	for (int16_t r = 0; r < BANDHEIGHT; r++)
+	{
+		//the tile row this screen row falls in, the tile above covers the rows before it
+		const int16_t ty = (bandY0 + r + msy) / TileHeight;
+		if (ty == lastTy)
+		{
+			//same tiles as the row above, so the same run
+			covX0[r] = covX0[r - 1];
+			covX1[r] = covX1[r - 1];
+			continue;
+		}
+		lastTy = ty;
+		if ((ty < 0) || (ty >= NrOfRows))
+			continue;
+		int16_t bestStart = 0, bestLen = 0, start = 0, len = 0;
+		for (int16_t tx = tx0; tx <= tx1; tx++)
+		{
+			bool covered = false;
+			if ((tx >= 0) && (tx < NrOfCols))
+			{
+				const uint16_t index = self->PositionalItems[ty][tx];
+				if (index != NoWorldPart)
+				{
+					CWorldPart* part = &WorldPartPool[index];
+					//a part only hides a whole tile while it sits on one: a moving one is
+					//between two. This game has no hidden parts, every part in the grid is
+					//drawn, so there is nothing else to ask
+					covered = PartOpaqueType(part->Type) &&
+					          (part->X == part->PlayFieldX * TileWidth) &&
+					          (part->Y == part->PlayFieldY * TileHeight);
+				}
+			}
+			if (covered)
+			{
+				if (len == 0)
+					start = tx;
+				len++;
+				if (len > bestLen)
+				{
+					bestLen = len;
+					bestStart = start;
+				}
+			}
+			else
+				len = 0;
+		}
+		if (bestLen == 0)
+			continue;
+		//the tiles in screen pixels, clipped to the strip
+		int16_t x0 = bestStart * TileWidth - msx;
+		int16_t x1 = (bestStart + bestLen) * TileWidth - msx;
+		if (x0 < bandX0)
+			x0 = bandX0;
+		if (x1 > bandX0 + bandW)
+			x1 = bandX0 + bandW;
+		if (x1 > x0)
+		{
+			covX0[r] = x0;
+			covX1[r] = x1;
+			covAny = true;
+		}
+	}
+}
+
 static void BandBackground()
 {
+#if FLATBACKGROUND
+	//One colour instead of the picture, see FLATBACKGROUND in defines.h. The strip is filled
+	//where it is not covered, which costs nothing: reading a full screen picture off the card
+	//is what a scrolling board spent nearly all of its time on
+	for (int16_t r = 0; r < BANDHEIGHT; r++)
+	{
+		const int16_t hide0 = covX0[r], hide1 = covX1[r];
+		uint16_t* drow = &bandBuf[r * bandW];
+		for (int16_t x = 0; x < bandW; x++)
+		{
+			const int16_t sx = bandX0 + x;
+			if ((hide1 > hide0) && (sx >= hide0) && (sx < hide1))
+				continue;
+			drow[x] = ColorBackground;
+		}
+	}
+	return;
+#endif
 	if (!IMGBackground)
 	{
 		for (uint16_t i = 0; i < bandW * BANDHEIGHT; i++)
@@ -945,12 +1061,42 @@ static void BandBackground()
 	}
 #if CARDIMAGES
 	//The strip is the part of a full screen picture that lands in it. The rows of a picture lie
-	//together in the file, so the whole strip is asked for in one read rather than a row at a
-	//time: this game's backgrounds are real pictures and cannot be stood in for by a colour,
-	//see FLATBACKGROUND in defines.h
-	if (!CardImages_Rows(IMGBackground, bandX0, bandY0, bandW, BANDHEIGHT, bandBuf))
-		for (uint16_t i = 0; i < bandW * BANDHEIGHT; i++)
-			bandBuf[i] = ColorWhite;
+	//together in the file, so a strip with nothing covering it is asked for in one read rather
+	//than a row at a time: this game's backgrounds are real pictures and cannot be stood in for
+	//by a colour, see FLATBACKGROUND in defines.h
+	if (!covAny)
+	{
+		if (!CardImages_Rows(IMGBackground, bandX0, bandY0, bandW, BANDHEIGHT, bandBuf))
+			for (uint16_t i = 0; i < bandW * BANDHEIGHT; i++)
+				bandBuf[i] = ColorWhite;
+		return;
+	}
+	//Something covers part of this strip, so only what will be seen is read. A row that is
+	//covered end to end is not read at all, which is most of a board of solid ground
+	for (int16_t r = 0; r < BANDHEIGHT; r++)
+	{
+		const int16_t hide0 = covX0[r], hide1 = covX1[r];
+		uint16_t* drow = &bandBuf[r * bandW];
+		const int16_t rowEnd = bandX0 + bandW;
+		if ((hide1 > hide0) && (hide0 <= bandX0) && (hide1 >= rowEnd))
+			continue;
+		//the piece before what is covered and the piece after it, either of which may be empty
+		const int16_t pieces[2][2] = { { bandX0, (hide1 > hide0) ? hide0 : rowEnd },
+		                               { (hide1 > hide0) ? hide1 : rowEnd, rowEnd } };
+		for (uint8_t piece = 0; piece < 2; piece++)
+		{
+			int16_t from = pieces[piece][0], to = pieces[piece][1];
+			if (from < bandX0)
+				from = bandX0;
+			if (to > rowEnd)
+				to = rowEnd;
+			if (to <= from)
+				continue;
+			if (!CardImages_Row(IMGBackground, from, bandY0 + r, to - from, drow + (from - bandX0)))
+				for (int16_t x = from; x < to; x++)
+					drow[x - bandX0] = ColorWhite;
+		}
+	}
 	return;
 #endif
 	//a new skin brings a new background
@@ -973,7 +1119,10 @@ static void BandBackground()
 		uint8_t used = bgRowUsed[bandY0 + r]; //pixels of this control that lie before the row
 		uint16_t skip = bandX0;               //pixels of the row left of the strip
 		uint16_t left = bandW;
+		int16_t pos = bandX0;                 //screen column the next pixels go to
 		uint16_t* drow = &bandBuf[r * bandW];
+		//what an opaque tile paints over, which is not decoded at all
+		const int16_t hide0 = covX0[r], hide1 = covX1[r];
 		while (left > 0)
 		{
 			uint8_t control = PLATFORM_READ_BYTE(data);
@@ -989,18 +1138,50 @@ static void BandBackground()
 				skip = 0;
 				if (avail > left)
 					avail = left;
-				if (run)
+				//this control covers [pos, end), an opaque tile hides [hide0, hide1) of the
+				//row: what is left is the piece before the hidden run and the piece after it
+				const int16_t end = pos + avail;
+				int16_t spans[2][2];
+				int16_t parts = 0;
+				if (hide1 <= hide0)
 				{
-					uint16_t col = ReadPixel(data + 1);
-					for (uint8_t i = 0; i < avail; i++)
-						*drow++ = col;
+					//nothing hidden on this row
+					spans[0][0] = pos;
+					spans[0][1] = end;
+					parts = 1;
 				}
 				else
 				{
-					//the pixels are little endian RGB565 like the strip, copied as they are
-					BandCopy(drow, data + 1 + used * 2, avail);
-					drow += avail;
+					if (pos < hide0)
+					{
+						spans[parts][0] = pos;
+						spans[parts][1] = (end < hide0) ? end : hide0;
+						parts++;
+					}
+					if (end > hide1)
+					{
+						spans[parts][0] = (pos > hide1) ? pos : hide1;
+						spans[parts][1] = end;
+						parts++;
+					}
 				}
+				const uint16_t col = run ? ReadPixel(data + 1) : 0;
+				for (int16_t part = 0; part < parts; part++)
+				{
+					const int16_t from = spans[part][0];
+					const int16_t n = spans[part][1] - from;
+					uint16_t* d = drow + (from - pos);
+					if (run)
+					{
+						for (int16_t i = 0; i < n; i++)
+							d[i] = col;
+					}
+					else
+						//the pixels are little endian RGB565 like the strip, copied as they are
+						BandCopy(d, data + 1 + (used + (from - pos)) * 2, n);
+				}
+				drow += avail;
+				pos = end;
 				left -= avail;
 			}
 			used = 0;
@@ -1051,7 +1232,7 @@ static PLATFORM_HOT_CODE void BandSpriteOneBit(int16_t sx, int16_t sy, const uin
 }
 #endif
 
-static void BandSprite(int16_t sx, int16_t sy, const uint8_t* image, uint8_t frame)
+static void BandSprite(int16_t sx, int16_t sy, const uint8_t* image, uint8_t frame, bool keyed)
 {
 	if (!image)
 		return;
@@ -1081,7 +1262,10 @@ static void BandSprite(int16_t sx, int16_t sy, const uint8_t* image, uint8_t fra
 			{
 				uint16_t* drow = &bandBuf[(sy + r - bandY0) * bandW + (sx + c0 - bandX0)];
 				const uint8_t* src = px + (((frame * TileHeight + r) * TileWidth) + c0) * sizeof(uint16_t);
-				BandCopyKeyed(drow, src, cols);
+				if (keyed)
+					BandCopyKeyed(drow, src, cols);
+				else
+					BandCopy(drow, src, cols);
 			}
 			return;
 		}
@@ -1101,6 +1285,11 @@ static void BandSprite(int16_t sx, int16_t sy, const uint8_t* image, uint8_t fra
 				continue;
 			if (!whole)
 				row = tile;
+			if (!keyed)
+			{
+				memcpy(drow, row, (size_t)cols * sizeof(uint16_t));
+				continue;
+			}
 			for (int16_t c = 0; c < cols; c++)
 				//magenta is the transparent key, 0xF81F in RGB565
 				if (row[c] != 0xF81F)
@@ -1112,7 +1301,7 @@ static void BandSprite(int16_t sx, int16_t sy, const uint8_t* image, uint8_t fra
 #if ONEBITIMAGES
 	if (skinImagesOneBit)
 	{
-		BandSpriteOneBit(sx, sy, image, frame, true, r0, r1, c0, c1);
+		BandSpriteOneBit(sx, sy, image, frame, keyed, r0, r1, c0, c1);
 		return;
 	}
 #endif
@@ -1121,7 +1310,11 @@ static void BandSprite(int16_t sx, int16_t sy, const uint8_t* image, uint8_t fra
 	{
 		uint16_t* drow = &bandBuf[(sy + r - bandY0) * bandW + (sx + c0 - bandX0)];
 		const uint8_t* src = image + (r * TileWidth + c0) * sizeof(uint16_t);
-		BandCopyKeyed(drow, src, c1 - c0);
+		//a sheet with no transparent pixel in it goes in as one copy, nothing to leave out
+		if (keyed)
+			BandCopyKeyed(drow, src, c1 - c0);
+		else
+			BandCopy(drow, src, c1 - c0);
 	}
 }
 
@@ -1150,7 +1343,12 @@ void CWorldParts_Draw(CWorldParts* self)
 bool CWorldParts_DrawBoard(CWorldParts* self)
 {
 	if (IMGBackground)
+#if FLATBACKGROUND
+		//one colour, see FLATBACKGROUND in defines.h
+		GFX.fillRect(0, 0, WINDOW_WIDTH, WINDOW_HEIGHT, ColorBackground);
+#else
 		pushImageRLE(0, 0, WINDOW_WIDTH, WINDOW_HEIGHT, IMGBackground);
+#endif
 	else
 		GFX.fillRect(0, 0, WINDOW_WIDTH, WINDOW_HEIGHT, ColorWhite);
 
@@ -1268,6 +1466,16 @@ bool CWorldParts_DrawBoard(CWorldParts* self)
 #if CHGAME_TIMING
 		uint32_t tSection = Platform_Micros();
 #endif
+		//where the opaque tiles will paint over the background, so it is not drawn there
+#if BANDCOVERAGE
+		BandFindCovered(self, msx, msy);
+#else
+		BandClearCovered();
+#endif
+#if CHGAME_TIMING
+		bandCoverUs += Platform_Micros() - tSection;
+		tSection = Platform_Micros();
+#endif
 		BandBackground();
 #if CHGAME_TIMING
 		bandBgUs += Platform_Micros() - tSection;
@@ -1297,7 +1505,9 @@ bool CWorldParts_DrawBoard(CWorldParts* self)
 #if CHGAME_TIMING
 			dbgSprites++;
 #endif
-			BandSprite(Part->X - msx, Part->Y - msy, CWorldPart_SpriteData(Part), CWorldPart_SpriteFrame(Part));
+			//a sheet that covers its whole tile needs no per pixel test, see partOpaque
+			BandSprite(Part->X - msx, Part->Y - msy, CWorldPart_SpriteData(Part),
+			           CWorldPart_SpriteFrame(Part), !PartOpaqueType(Part->Type));
 		}
 #if CHGAME_TIMING
 		//the floor and the parts, which is everything drawn over the background

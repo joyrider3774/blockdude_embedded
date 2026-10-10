@@ -87,8 +87,8 @@ CWorldPart* CWorldPart_create(const int8_t PlayFieldXin, const int8_t PlayFieldY
 	CWorldPart* Result = CWorldPart_PoolAlloc();
 	if (Result)
 	{
-		Result->Player = NULL;
-		Result->AttachedPart = NULL;
+		Result->PlayerIx = NoWorldPart;
+		Result->AttachedPartIx = NoWorldPart;
 		Result->NeedToMoveLeft = false;
 		Result->NeedToMoveRight = false;
 		Result->AnimCounter = 0;
@@ -218,14 +218,14 @@ bool CWorldPart_MovesInQue(CWorldPart* self)
 
 void CWorldPart_AttachToPlayer(CWorldPart* self, CWorldPart* PlayerIn)
 {
-	PlayerIn->AttachedPart = self;
-	self->Player = PlayerIn;
+	PlayerIn->AttachedPartIx = CWorldPart_IndexOf(self);
+	self->PlayerIx = CWorldPart_IndexOf(PlayerIn);
 }
 
 void CWorldPart_DeattachFromPlayer(CWorldPart* self, CWorldPart* PlayerIn)
 {
-	PlayerIn->AttachedPart = NULL;
-	self->Player = NULL;
+	PlayerIn->AttachedPartIx = NoWorldPart;
+	self->PlayerIx = NoWorldPart;
 }
 
 void CWorldPart_SetAnimPhase(CWorldPart* self, uint8_t AnimPhaseIn)
@@ -283,7 +283,7 @@ bool CWorldPart_MoveTo(CWorldPart* self, const int8_t PlayFieldXin, const int8_t
 						//look the box up in the positional grid at the tile the player came from, so
 						//carrying it depended on the grid still naming the box there part way through
 						//the player's own move. The pointer does not, see CWorldPart_AttachToPlayer
-						CWorldPart* Part = self->AttachedPart;
+						CWorldPart* Part = CWorldPart_At(self->AttachedPartIx);
 						if(Part)
 						{
 							if (Part->Group == GroupBox)
@@ -317,7 +317,7 @@ bool CWorldPart_MoveTo(CWorldPart* self, const int8_t PlayFieldXin, const int8_t
 						//look the box up in the positional grid at the tile the player came from, so
 						//carrying it depended on the grid still naming the box there part way through
 						//the player's own move. The pointer does not, see CWorldPart_AttachToPlayer
-						CWorldPart* Part = self->AttachedPart;
+						CWorldPart* Part = CWorldPart_At(self->AttachedPartIx);
 						if (Part)
 						{
 							if (Part->Group == GroupBox)
@@ -354,7 +354,7 @@ bool CWorldPart_MoveTo(CWorldPart* self, const int8_t PlayFieldXin, const int8_t
 						//look the box up in the positional grid at the tile the player came from, so
 						//carrying it depended on the grid still naming the box there part way through
 						//the player's own move. The pointer does not, see CWorldPart_AttachToPlayer
-						CWorldPart* Part = self->AttachedPart;
+						CWorldPart* Part = CWorldPart_At(self->AttachedPartIx);
 						if (Part)
 						{
 							if (Part->Group == GroupBox)
@@ -378,7 +378,7 @@ bool CWorldPart_MoveTo(CWorldPart* self, const int8_t PlayFieldXin, const int8_t
 						//look the box up in the positional grid at the tile the player came from, so
 						//carrying it depended on the grid still naming the box there part way through
 						//the player's own move. The pointer does not, see CWorldPart_AttachToPlayer
-						CWorldPart* Part = self->AttachedPart;
+						CWorldPart* Part = CWorldPart_At(self->AttachedPartIx);
 						if (Part)
 						{
 							if (Part->Group == GroupBox)
@@ -478,11 +478,11 @@ void CWorldPart_Event_ArrivedOnNewSpot(CWorldPart* self)
 			bool FloorFound = false;
 
 			//in case the block was attached to a player but blocked by wall the player moved under
-			if (self->AttachedPart) 
+			if (CWorldPart_At(self->AttachedPartIx)) 
 			{
-				if(self->AttachedPart->Group == GroupBox)
+				if(CWorldPart_At(self->AttachedPartIx)->Group == GroupBox)
 				{
-					CWorldPart_Event_ArrivedOnNewSpot(self->AttachedPart);
+					CWorldPart_Event_ArrivedOnNewSpot(CWorldPart_At(self->AttachedPartIx));
 				}
 			}
 
@@ -563,18 +563,18 @@ void CWorldPart_Event_ArrivedOnNewSpot(CWorldPart* self)
 			if (PlayerBelow)
 				CWorldPart_AttachToPlayer(self, WorldParts->Player);
 			else
-				if ((self->Player) && !CWorldPart_MovesInQue(self))
-					CWorldPart_DeattachFromPlayer(self, self->Player);
+				if ((self->PlayerIx != NoWorldPart) && !CWorldPart_MovesInQue(self))
+					CWorldPart_DeattachFromPlayer(self, CWorldPart_At(self->PlayerIx));
 
 			//if nothing is below and there are no moves in the queue move it down
 			if ((!SomethingBelow) && (!CWorldPart_MovesInQue(self)))
 			{
-				if (self->Player)
+				if (self->PlayerIx != NoWorldPart)
 				{
-					/*if (!self->Player->IsMoving)
+					/*if (!CWorldPart_At(self->PlayerIx)->IsMoving)
 					{
 						self->AttachedToPlayer = false;
-						self->Player = NULL;
+						self->PlayerIx = NoWorldPart;
 					}*/
 					//CWorldPart_Event_ArrivedOnNewSpot(self);
 				}
@@ -818,11 +818,11 @@ bool CWorldPart_CanMoveTo(CWorldPart* self, const int8_t PlayFieldXin, const int
 					}
 
 					//check to see if our attached box has a queue if so we can't move either
-					if (self->AttachedPart)
+					if (self->AttachedPartIx != NoWorldPart)
 					{
-						if (self->AttachedPart->Group == GroupBox)
+						if (CWorldPart_At(self->AttachedPartIx)->Group == GroupBox)
 						{
-							if (CWorldPart_MovesInQue(self->AttachedPart))
+							if (CWorldPart_MovesInQue(CWorldPart_At(self->AttachedPartIx)))
 							{
 								return false;
 							}
@@ -931,9 +931,9 @@ bool CWorldPart_Move(CWorldPart* self)
 				}
 				else
 				{
-					if (self->Player)
+					if (self->PlayerIx != NoWorldPart)
 					{
-						CWorldPart_DeattachFromPlayer(self, self->Player);
+						CWorldPart_DeattachFromPlayer(self, CWorldPart_At(self->PlayerIx));
 					}
 					CWorldPart_MoveQueClear(self);
 				}
@@ -943,11 +943,13 @@ bool CWorldPart_Move(CWorldPart* self)
 	return Result;
 }
 
-const uint8_t* CWorldPart_SpriteData(CWorldPart* self)
+//The sheet a tile type is drawn from. Pulled out of CWorldPart_SpriteData so the opacity of a
+//type can be worked out from the same mapping, see RefreshOpaque in CWorldParts.cpp
+const uint8_t* CWorldPart_ImageForType(uint8_t type)
 {
 	const uint8_t * Img = NULL;
 
-	switch (self->Type)
+	switch (type)
 	{
 	case IDEmpty:
 		Img = IMGEmpty;
@@ -1028,6 +1030,13 @@ const uint8_t* CWorldPart_SpriteData(CWorldPart* self)
 		Img = IMGRoofDownLeft;
 		break;
 	}
+
+	return Img;
+}
+
+const uint8_t* CWorldPart_SpriteData(CWorldPart* self)
+{
+	const uint8_t * Img = CWorldPart_ImageForType(self->Type);
 
 	if (!Img)
 		return NULL;

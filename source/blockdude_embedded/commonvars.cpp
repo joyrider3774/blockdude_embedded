@@ -10,6 +10,8 @@ const uint8_t* IMGFloor = NULL, * IMGPlayer = NULL, * IMGBox = NULL, * IMGEmpty 
 const uint8_t *IMGBackground = NULL, * IMGIntro1 = NULL, *IMGIntro2 = NULL, *IMGIntro3 = NULL, *IMGTitleScreen = NULL;
 
 uint16_t ColorWhite, ColorBlack;
+//the one colour a skin's background is stood in for by, see FLATBACKGROUND in Defines.h
+uint16_t ColorBackground;
 const char* skins[] = { "Default", "Tech", "Flat", "Ti-83", "Kenney"};
 //only the packs LEVELPACKS asks for, in the order the lookup table in levels.h has them
 const char* LevelPacks[] = {

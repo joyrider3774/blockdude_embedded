@@ -17,8 +17,12 @@ typedef struct CWorldPart CWorldPart;
 //WorldParts, so no pointer back to it is kept. The move queue is kept there too, only the
 //carried box ever has moves queued
 struct CWorldPart {
-	CWorldPart* AttachedPart;
-	CWorldPart *Player;
+	//The box this part carries and the player carrying it, as slots in the pool rather than
+	//pointers: two bytes each instead of four, and dropping both pointers takes the part from
+	//28 bytes to 22, which over MAXWORLDPARTS of them is about 2 KB. Read them through
+	//CWorldPart_At and write them through CWorldPart_IndexOf, which keep NULL as NoWorldPart
+	uint16_t AttachedPartIx;
+	uint16_t PlayerIx;
 	//pixel positions (max NrOfCols * TileWidth)
 	int16_t X, Y;
 	//where (in level pixels) and with which anim phase the part was last painted,
@@ -76,7 +80,7 @@ static_assert(TileWidth / GameMoveSpeed <= 31, "MoveDelayCounter does not fit it
 static_assert(AnimBaseRightJump <= 15, "AnimBase does not fit its four bits");
 static_assert(PlayerAnimDelay <= 7, "AnimDelay does not fit its three bits");
 static_assert(AnimBaseRightJump + 4 - 1 <= 15, "AnimPhase does not fit its four bits");
-static_assert(sizeof(struct CWorldPart) <= 28, "the part grew, the pool is MAXWORLDPARTS of it");
+static_assert(sizeof(struct CWorldPart) <= 22, "the part grew, the pool is MAXWORLDPARTS of it");
 
 //every part lives in this pool (MAXWORLDPARTS parts), the positional grid in CWorldParts keeps its index.
 //It is NULL until CWorldPart_PoolInit, CWorldParts_Create and CWorldParts_deinit take care of it
@@ -87,6 +91,17 @@ static_assert(MAXWORLDPARTS <= NoWorldPart, "pool indexes collide with NoWorldPa
 static inline uint16_t CWorldPart_PoolIndex(const CWorldPart* WorldPart)
 {
 	return (uint16_t)(WorldPart - WorldPartPool);
+}
+
+//the part a slot holds, and the slot a part sits in, with NULL standing in for NoWorldPart
+static inline CWorldPart* CWorldPart_At(uint16_t index)
+{
+	return (index == NoWorldPart) ? NULL : &WorldPartPool[index];
+}
+
+static inline uint16_t CWorldPart_IndexOf(const CWorldPart* part)
+{
+	return part ? CWorldPart_PoolIndex(part) : NoWorldPart;
 }
 
 bool CWorldPart_PoolInit();
@@ -111,6 +126,8 @@ bool CWorldPart_SetPosition(CWorldPart* self, const int8_t PlayFieldXin, const i
 bool CWorldPart_CanMoveTo(CWorldPart* self, const int8_t PlayFieldXin, const int8_t PlayFieldYin);
 bool CWorldPart_Move(CWorldPart* self);
 //the 16x16 RGB565_LE image of the part's current anim phase, NULL if it has none
+//the sheet a tile type is drawn from, which is also what says whether that type is opaque
+const uint8_t* CWorldPart_ImageForType(uint8_t type);
 const uint8_t* CWorldPart_SpriteData(CWorldPart* self);
 //which frame of its sheet the part shows, see CWorldPart_SpriteData
 uint8_t CWorldPart_SpriteFrame(CWorldPart* self);

@@ -15,6 +15,8 @@ extern const uint8_t * IMGFloor, * IMGPlayer, * IMGBox, * IMGEmpty, * IMGExit, *
 
 extern const uint8_t * IMGBackground, *IMGIntro1, * IMGIntro2, * IMGIntro3, * IMGTitleScreen;
 extern uint16_t ColorWhite, ColorBlack;
+//the one colour a skin's background is stood in for by, see FLATBACKGROUND in Defines.h
+extern uint16_t ColorBackground;
 extern const char* LevelPacks[];
 extern const char* skins[];
 //sized to what they hold: skin 0..MAXSKINS-1, GameState at most GSStageSelect + GSDiff,

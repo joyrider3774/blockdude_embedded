@@ -18,6 +18,13 @@
 //time and never kept. 0 is no arena at all. See the arena in cardimages.cpp
 //How much of a level's plane is held while it is read off the card. A level is three planes
 //walked together, so three of these are live at once; a plane is a few dozen bytes
+//1 = the strip leaves out the part of the background that an opaque tile paints over anyway,
+//see BandFindCovered in CWorldParts.cpp. It is worth most where the background is read off a
+//card, a read it saves outright; 0 draws the whole background and is there to compare against
+#ifndef BANDCOVERAGE
+#define BANDCOVERAGE 1
+#endif
+
 #ifndef CARD_LEVEL_CHUNK
 #define CARD_LEVEL_CHUNK 32
 #endif
@@ -26,9 +33,12 @@
 #define CARDARENA 2048
 #endif
 
-//1 = the full screen background is drawn as one plain colour instead of as a picture, for a
-//skin whose background is one colour a row. Off here: of this game's five skins only Kenney
-//and Ti-83 are like that, the Default, Tech and Flat ones have a real picture behind the board
+//1 = the full screen background is drawn as one plain colour (ColorBackground, which
+//LoadGraphics sets per skin from the mean of that skin's own background picture) instead of as
+//the picture. Two of this game's five skins are one colour anyway (Kenney and Ti-83); the
+//Default, Tech and Flat ones lose their clouds, which is the price of not reading 32768 bytes
+//off the card for every frame that repaints the whole screen. Measured scrolling in level 10:
+//7 frames a second with the picture, 96 without it. A device sets this itself
 #ifndef FLATBACKGROUND
 #define FLATBACKGROUND 0
 #endif

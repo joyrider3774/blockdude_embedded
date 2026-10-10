@@ -653,6 +653,64 @@ uint8_t CurrentSkin(void)
 //1 while the skin in use keeps its pictures one bit a pixel
 bool skinImagesOneBit = false;
 
+//1 for a tile type whose sheet has no transparent pixel anywhere. A strip can then copy its
+//rows straight in instead of testing every pixel against the key, and the background under it
+//need not be drawn at all, see RefreshOpaque below and BandSprite in CWorldParts.cpp
+bool partOpaque[IDRoofDownLeft + 1];
+
+//Whether a sheet covers every pixel of its tile. Worked out by reading it once when a skin is
+//loaded rather than assumed: a skin whose earth has see through parts simply does not get the
+//shortcut. A sheet is a few hundred bytes and this runs once a skin, so reading one off the
+//card here costs nothing that is noticed
+static bool SheetOpaque(const uint8_t* image)
+{
+	if (!image)
+		return false;
+#if CARDIMAGES
+	//the whole sheet, a row at a time into a scratch, see cardimages.h
+	const uint16_t w = CardImages_Width(image), h = CardImages_Height(image);
+	if (!w || !h || (w > WINDOW_WIDTH))
+		return false;
+	uint16_t row[WINDOW_WIDTH];
+	for (uint16_t y = 0; y < h; y++)
+	{
+		if (!CardImages_Row(image, 0, y, w, row))
+			return false;
+		for (uint16_t x = 0; x < w; x++)
+			//magenta is the transparent key, 0xF81F in RGB565
+			if (row[x] == 0xF81F)
+				return false;
+	}
+	return true;
+#else
+#if ONEBITIMAGES
+	//a one bit picture carries a mask only when it has something to skip, which is the whole
+	//of the question here
+	if (skinImagesOneBit)
+		return OneBitMaskAt(image) == 0;
+#endif
+	//The first frame only: a flash sheet is a bare array and does not say how many frames it
+	//holds. Every type that hides the background behind it is a single frame tile, and the two
+	//that do animate (the player and the box the player carries) are drawn over something else
+	//anyway, so a later frame is never what this is asked about
+	const size_t count = (size_t)TileWidth * TileHeight;
+	for (size_t i = 0; i < count; i++)
+		if ((PLATFORM_READ_BYTE(image + i * 2) | (PLATFORM_READ_BYTE(image + i * 2 + 1) << 8)) == 0xF81F)
+			return false;
+	return true;
+#endif
+}
+
+//works the table out for the skin that was just loaded
+static void RefreshOpaque(void)
+{
+	for (uint16_t type = 0; type <= IDRoofDownLeft; type++)
+		partOpaque[type] = SheetOpaque(CWorldPart_ImageForType((uint8_t)type));
+	//the player is drawn over whatever it stands on, so it never hides the background
+	partOpaque[IDPlayer] = false;
+	partOpaque[IDEmpty] = false;
+}
+
 void LoadGraphics(void)
 {
 	UnLoadGraphics();
@@ -702,22 +760,32 @@ void LoadGraphics(void)
 	switch (CurrentSkin())
 	{
 		case 0:
+			//what the background is stood in for by, see FLATBACKGROUND in defines.h
+			ColorBackground = SCREEN.color565(189, 211, 212);
 			ColorBlack = SCREEN.color565(107,128,128);
 			ColorWhite = SCREEN.color565(255,255,255);
 			break;
 		case 1:
+			//what the background is stood in for by, see FLATBACKGROUND in defines.h
+			ColorBackground = SCREEN.color565(0, 0, 45);
 			ColorBlack = SCREEN.color565(6,6,72);
 			ColorWhite = SCREEN.color565(255,255,255);
 			break;
 		case 2:
+			//what the background is stood in for by, see FLATBACKGROUND in defines.h
+			ColorBackground = SCREEN.color565(189, 211, 212);
 			ColorBlack = SCREEN.color565(107,128,128);
 			ColorWhite = SCREEN.color565(255,255,255);
 			break;
 		case 3:
+			//what the background is stood in for by, see FLATBACKGROUND in defines.h
+			ColorBackground = SCREEN.color565(204, 224, 207);
 			ColorWhite = SCREEN.color565(204,224,207);
 			ColorBlack = SCREEN.color565(79,80,67);
 			break;
 		case 4:
+			//what the background is stood in for by, see FLATBACKGROUND in defines.h
+			ColorBackground = SCREEN.color565(0, 0, 0);
 			ColorBlack = SCREEN.color565(0,0,0);
 			ColorWhite = SCREEN.color565(255,255,255);
 			break;
@@ -730,6 +798,8 @@ void LoadGraphics(void)
 		//Default
 		case 0:
 			IMGBackground = default_background_rle;
+			//what the background is stood in for by, see FLATBACKGROUND in defines.h
+			ColorBackground = SCREEN.color565(189, 211, 212);
 			IMGIntro1 = default_intro1_rle;
 			IMGIntro2 = default_intro2_rle;
 			IMGIntro3 = default_intro3_rle;
@@ -767,6 +837,8 @@ void LoadGraphics(void)
 		//Tech
 		case 1:
 			IMGBackground = tech_background_rle;
+			//what the background is stood in for by, see FLATBACKGROUND in defines.h
+			ColorBackground = SCREEN.color565(0, 0, 45);
 			IMGIntro1 = tech_intro1_rle;
 			IMGIntro2 = tech_intro2_rle;
 			IMGIntro3 = tech_intro3_rle;
@@ -805,6 +877,8 @@ void LoadGraphics(void)
 		//flat
 		case 2:
 			IMGBackground = default_background_rle;
+			//what the background is stood in for by, see FLATBACKGROUND in defines.h
+			ColorBackground = SCREEN.color565(189, 211, 212);
 			IMGIntro1 = default_intro1_rle;
 			IMGIntro2 = default_intro2_rle;
 			IMGIntro3 = default_intro3_rle;
@@ -843,6 +917,8 @@ void LoadGraphics(void)
 		//ti-83
 		case 3:
 			IMGBackground = ti83_background_rle;
+			//what the background is stood in for by, see FLATBACKGROUND in defines.h
+			ColorBackground = SCREEN.color565(204, 224, 207);
 			IMGIntro1 = ti83_intro1_rle;
 			IMGIntro2 = ti83_intro2_rle;
 			IMGIntro3 = ti83_intro3_rle;
@@ -881,6 +957,8 @@ void LoadGraphics(void)
 		//kenney
 		case 4:
 			IMGBackground = kenney_background_rle;
+			//what the background is stood in for by, see FLATBACKGROUND in defines.h
+			ColorBackground = SCREEN.color565(0, 0, 0);
 			IMGIntro1 = kenney_intro1_rle;
 			IMGIntro2 = kenney_intro2_rle;
 			IMGIntro3 = kenney_intro3_rle;
@@ -917,6 +995,8 @@ void LoadGraphics(void)
 #endif
 	}
 #endif
+	//the sheets are known now, so which of them hide the background can be worked out
+	RefreshOpaque();
 }
 
 void LoadFonts(void)
