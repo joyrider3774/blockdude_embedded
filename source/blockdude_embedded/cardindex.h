@@ -15,10 +15,11 @@
 #define CARD_FILE_83 "BLOCKDUDDAT"
 
 //every skin and picture name, hashed: a card made by another build has another stamp
-#define CARD_STAMP 0x36650D7EUL
+#define CARD_STAMP 0xD7507E0CUL
 
 //the sections of the container, by the name its table holds. Levels will be another one
 #define CARD_SEC_IMAGES "IMGS"
+#define CARD_SEC_LEVELS "LVLS"
 
 //1 when any picture is kept as one colour a row, see FMT_ROWS. The game builds the
 //code that draws one only then: a card without any is a game that need not carry it
@@ -74,3 +75,16 @@ enum CardImage : uint8_t
 	CARD_IMG_TOWER_TABLE_16_16 = 28,
 	CARD_IMG_TOWERSHAFT_TABLE_16_16 = 29,
 };
+
+//1 when the card holds the level packs too, so the game reads them from there and not
+//out of flash. 0 leaves everything about the levels as it was
+#define CARD_HAS_LEVELS 1
+
+#define CARD_LEVEL_COUNT 25
+
+//the packs, in the order the index holds them, by the name the game knows
+#define CARD_LEVEL_NAMES { "blockman/level1.lev", "blockman/level2.lev", "blockman/level3.lev", "blockman/level4.lev", "blockman/level5.lev", "blockman/level6.lev", "blockman/level7.lev", "blockman/level8.lev", "blockman/level9.lev", "blockman/level10.lev", "blockman/level11.lev", "blockman/level12.lev", "blockman/level13.lev", "blockman/level14.lev", "blockman/level15.lev", "blockman/level16.lev", "blockman/level17.lev", "blockman/level18.lev", "blockman/level19.lev", "blockman/level20.lev", "blockman/level21.lev", "davy/level1.lev", "davy/level2.lev", "davy/level3.lev", "davy/level4.lev" }
+
+//how many levels each pack holds, the entries above being one flat list
+#define CARD_LEVEL_PACKS 2
+#define CARD_LEVEL_PACK_COUNTS { 21, 4 }

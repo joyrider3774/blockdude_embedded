@@ -11,7 +11,10 @@
 #include "cworldpart.h"
 #include "cworldparts.h"
 //level_data_counts: how many levels each pack that is built in holds
+//the levels are on the card in a card build, see CARDLEVELS
+#if !CARDLEVELS
 #include "levels.h"
+#endif
 //the art read off a card, for a build with CARDIMAGES on
 #include "cardimages.h"
 //A card build has no art in flash at all: every skin is on the card in full RGB565 and the
@@ -938,7 +941,13 @@ void FindLevels(void)
 		InstalledLevels = 0;
 		return;
 	}
+#if CARDLEVELS
+	//the card says how many levels each pack holds, see CARD_LEVEL_PACK_COUNTS in cardindex.h
+	static const uint8_t packCounts[CARD_LEVEL_PACKS] = CARD_LEVEL_PACK_COUNTS;
+	InstalledLevels = packCounts[CurrentLevelPackIndex];
+#else
 	InstalledLevels = level_data_counts[CurrentLevelPackIndex];
+#endif
 }
 
 bool AskQuestionUpdate(int8_t* Id, bool* Answer, bool MustBeAButton)

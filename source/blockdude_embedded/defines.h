@@ -16,6 +16,12 @@
 //How much RAM a card build keeps its art in. A picture small enough to be worth it is read once
 //and kept here, so drawing it again is a copy; a full screen one is read a row or a strip at a
 //time and never kept. 0 is no arena at all. See the arena in cardimages.cpp
+//How much of a level's plane is held while it is read off the card. A level is three planes
+//walked together, so three of these are live at once; a plane is a few dozen bytes
+#ifndef CARD_LEVEL_CHUNK
+#define CARD_LEVEL_CHUNK 32
+#endif
+
 #ifndef CARDARENA
 #define CARDARENA 2048
 #endif

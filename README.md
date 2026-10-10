@@ -90,7 +90,7 @@ Every [release](https://github.com/joyrider3774/blockdude_embedded/releases) has
 | [PlayStation](https://en.wikipedia.org/wiki/PlayStation_(console)) | PSX_Blockdude.exe | open it in an emulator or send it to a console that runs unsigned code, the progress is not saved yet |
 | [PlayStation Portable](https://en.wikipedia.org/wiki/PlayStation_Portable) | PSP_Blockdude.PBP | rename it to EBOOT.PBP and put it in ms0:/PSP/GAME/Blockdude/ on the memory stick, or open it in PPSSPP |
 | [PlayStation Vita](https://en.wikipedia.org/wiki/PlayStation_Vita) | Vita_Blockdude.vpk | install it with VitaShell on a Vita with homebrew enabled, or open it in Vita3K |
-| [CHGame](https://github.com/bateske/CHGame) | `CHGame_Blockdude_1.bin` … (2 of them) **and** `BLOCKDUD.DAT` | flash it over USB with the `chgame-upload` that comes with the board package: `chgame-upload -port COM6 flash CHGame_Blockdude_1.bin -run`. There is a binary per part, the first eleven of blockman's levels and then the rest: the 50944 bytes of flash do not hold the game and all of its levels at once. **and copy `BLOCKDUD.DAT` into the root of the microSD card**. The game's pictures are on that card and it draws nothing without it: it says so on a screen of its own and stops. Copy the file to a freshly formatted card if it says the file is in too many pieces. |
+| [CHGame](https://github.com/bateske/CHGame) | `CHGame_Blockdude.bin` **and** `BLOCKDUD.DAT` | flash it over USB with the `chgame-upload` that comes with the board package: `chgame-upload -port COM6 flash CHGame_Blockdude.bin -run`, **and copy `BLOCKDUD.DAT` into the root of the microSD card**. The game's pictures and its levels are both on that card and it draws nothing without it: it says so on a screen of its own and stops. Copy the file to a freshly formatted card if it says the file is in too many pieces. One binary holds both level packs whole. |
 | Windows | Windows_Blockdude.exe | runs on its own, the progress is saved next to it in Blockdude.sav |
 | MS-DOS | DOS_Blockdude.zip | unzip BLOCKDUD.EXE onto a DOS machine or into DOSBox and run it, the progress is saved next to it in BLOCKDUD.SAV |
 | MS-DOS, not dithered | DOS_Blockdude_ND.zip | the same program with `DITHERING` 0, unzip BLOCK_ND.EXE and run it the same way. On a 256 colour screen a shade the palette has no colour for is the nearer one it does have, instead of a pattern of the two |
@@ -202,7 +202,9 @@ which changes what the device can hold:
 
 * all five skins are on the card in full RGB565 and can be picked in the options, instead of
   the one black & white skin a flash build has room for;
-* the game drops from 97% of the flash to 96% even so, five skins' worth of art leaving it.
+* one binary holds both packs whole instead of Blockman's 21 levels being split over two
+  binaries with Davy left off the device altogether, the levels being read off the card too,
+  and the game drops from 97% of the flash to 87%.
 
 The card file is `BLOCKDUD.DAT`, written into `releases/` by `tools/mkcard.py` as part of the build and
 released beside the binary. It holds a section per kind of data, so what the game later wants from
@@ -210,6 +212,14 @@ the card goes in beside the art rather than in a file of its own. A picture whos
 colour is kept as one colour a row rather than as pixels, which is what makes a plain background
 cost nothing. The reader is CHSd, which the board package ships; a flash build needs none of it.
 See `source/*/PlatformCHGame.h` for the switch and `tools/mkcard.py` for what is on the card.
+
+The levels are on the card as well, both packs whole, in a section of their own beside the art.
+They go in exactly as flash held them, each level a header and three run length encoded planes
+written by the game's own `tools/convert_levels.py`, and the game's reader walks the three from
+the card a piece at a time instead of through a pointer: nothing of a level is held in RAM that
+was not held before. See `CARD_HAS_LEVELS` in `cardindex.h` and the `LVLS` section in
+`tools/mkcard.py`.
+
 
 The Windows build draws through the same LovyanGFX 1.1.9, see `platforms/windows/CMakeLists.txt`.
 

@@ -104,12 +104,11 @@ SKINS = 5
 TARGETS = [
     ("ESPboy", "", {}),
     ("GamebuinoMeta", "", {}),
-    #The CHGame has 50944 bytes for everything, and about fourteen of Blockman's levels fit
-    #a binary, so its 21 are spread evenly over two. Davy is left off the device. The levels
-    #are kept as three run length encoded planes, see tools/convert_levels.py; LP_blockman is
-    #bit 0, written out as a number because that is what the build hands over
-    ("CHGame", "_1", {"CHGAME_SAVE_VARIANT": 1, "LEVELPACKS": 1, "MAXLEVELS_blockman": 11}),    #Blockman 1-11
-    ("CHGame", "_2", {"CHGAME_SAVE_VARIANT": 2, "LEVELPACKS": 1, "FIRSTLEVEL_blockman": 11}),   #Blockman 12-21
+    # The levels are read off the card as well now, so none of them are in the flash and one
+    # binary holds both packs whole: Blockman's 21 levels were spread over two binaries before
+    # and Davy was left off the device altogether. See CARD_HAS_LEVELS in cardindex.h and the
+    # LVLS section in tools/mkcard.py
+    ("CHGame", "", {"LEVELPACKS": "LP_ALL"}),
     ("PyBadge", "", {}),
     ("PyGamer", "", {}),
     ("PicoSystem", "", {}),

@@ -9,7 +9,10 @@
 #include "cardimages.h"
 #include "cworldpart.h"
 #include "commonvars.h"
+//the levels are on the card in a card build and none of them are in flash, see CARDLEVELS
+#if !CARDLEVELS
 #include "levels.h"
+#endif
 #include "gamefuncs.h"
 
 //the buffers of the dirty band rendering further down, they come and go with the board
@@ -29,6 +32,12 @@ typedef struct PlaneReader PlaneReader;
 struct PlaneReader
 {
 	const uint8_t* pos;
+#if CARDLEVELS
+	//the same walk over a plane that lies on the card, see PlaneRaw
+	uint32_t cardAt;
+	uint8_t have, used;
+	uint8_t buf[CARD_LEVEL_CHUNK];
+#endif
 	uint8_t left;            //how many bytes the run or the literal still owes
 	uint8_t repeated;        //the byte a run repeats
 	bool inRun;
@@ -37,25 +46,59 @@ struct PlaneReader
 static void PlaneReaderInit(PlaneReader* plane, const uint8_t* at)
 {
 	plane->pos = at;
+#if CARDLEVELS
+	plane->cardAt = 0;
+	plane->have = 0;
+	plane->used = 0;
+#endif
 	plane->left = 0;
 	plane->repeated = 0;
 	plane->inRun = false;
+}
+
+#if CARDLEVELS
+//the same, for a plane that lies on the card: where in the file it starts. A level is read
+//once and the three planes are walked together, so each keeps a piece of itself here
+static void PlaneReaderInitCard(PlaneReader* plane, uint32_t at)
+{
+	PlaneReaderInit(plane, NULL);
+	plane->cardAt = at;
+}
+#endif
+
+//The next raw byte of the plane, before the run length encoding is undone. This is the only
+//place that knows where a level is kept
+static uint8_t PlaneRaw(PlaneReader* plane)
+{
+#if CARDLEVELS
+	if (plane->used >= plane->have)
+	{
+		if (!Platform_CardRead(plane->cardAt, plane->buf, CARD_LEVEL_CHUNK))
+			return 0;
+		plane->cardAt += CARD_LEVEL_CHUNK;
+		plane->have = CARD_LEVEL_CHUNK;
+		plane->used = 0;
+	}
+	return plane->buf[plane->used++];
+#else
+	//PLATFORM_READ_BYTE is pgm_read_byte on some of the devices, which may look at what it
+	//is handed more than once, so the pointer is never stepped on inside it
+	const uint8_t value = PLATFORM_READ_BYTE(plane->pos);
+	plane->pos++;
+	return value;
+#endif
 }
 
 static uint8_t PlaneReaderNext(PlaneReader* plane)
 {
 	if (plane->left == 0)
 	{
-		//PLATFORM_READ_BYTE is pgm_read_byte on some of the devices, which may look at what it
-		//is handed more than once, so the pointer is never stepped on inside it
-		uint8_t control = PLATFORM_READ_BYTE(plane->pos);
-		plane->pos++;
+		uint8_t control = PlaneRaw(plane);
 		if (control & 0x80)
 		{
 			plane->inRun = true;
 			plane->left = (uint8_t)((control & 0x7F) + 1);
-			plane->repeated = PLATFORM_READ_BYTE(plane->pos);
-			plane->pos++;
+			plane->repeated = PlaneRaw(plane);
 		}
 		else
 		{
@@ -66,9 +109,7 @@ static uint8_t PlaneReaderNext(PlaneReader* plane)
 	plane->left--;
 	if (plane->inRun)
 		return plane->repeated;
-	uint8_t value = PLATFORM_READ_BYTE(plane->pos);
-	plane->pos++;
-	return value;
+	return PlaneRaw(plane);
 }
 
 typedef struct LevelReader LevelReader;
@@ -90,6 +131,44 @@ static uint16_t LevelReaderInit(LevelReader* reader, const uint8_t* level)
 	reader->left = parts;
 	return parts;
 }
+
+#if CARDLEVELS
+//The same, for a level that lies on the card. Its head is the six bytes the tool wrote, see
+//encode_level in tools/convert_levels.py, and the three planes are offsets into the level
+static uint16_t LevelReaderInitCard(LevelReader* reader, uint32_t at)
+{
+	uint8_t head[LEVEL_HEADER];
+	if (!Platform_CardRead(at, head, sizeof(head)))
+	{
+		reader->left = 0;
+		return 0;
+	}
+	const uint16_t parts = (uint16_t)(head[0] | (head[1] << 8));
+	const uint16_t xAt = (uint16_t)(head[2] | (head[3] << 8));
+	const uint16_t yAt = (uint16_t)(head[4] | (head[5] << 8));
+	PlaneReaderInitCard(&reader->type, at + LEVEL_HEADER);
+	PlaneReaderInitCard(&reader->x, at + xAt);
+	PlaneReaderInitCard(&reader->y, at + yAt);
+	reader->left = parts;
+	return parts;
+}
+
+//Where a level of a pack lies on the card. The entries are one flat list, a pack after a pack,
+//so the packs before this one are counted past first, see CARD_LEVEL_PACK_COUNTS
+static bool CardLevelAt(uint8_t pack, uint8_t level, uint32_t* at)
+{
+	static const uint8_t packCounts[CARD_LEVEL_PACKS] = CARD_LEVEL_PACK_COUNTS;
+	if (pack >= CARD_LEVEL_PACKS)
+		return false;
+	uint16_t index = 0;
+	for (uint8_t i = 0; i < pack; i++)
+		index = (uint16_t)(index + packCounts[i]);
+	if (level >= packCounts[pack])
+		return false;
+	uint32_t size = 0;
+	return CardLevels_Pack((uint8_t)(index + level), at, &size);
+}
+#endif
 
 //gives the next part of the level, false once there are none left
 static bool LevelReaderNext(LevelReader* reader, uint8_t* type, uint8_t* x, uint8_t* y)
@@ -370,12 +449,22 @@ void CWorldParts_Load(CWorldParts* self, uint8_t levelPack, uint8_t Level)
 	uint8_t miny = 255;
 	uint8_t maxx = 0;
 	uint8_t maxy = 0;
+#if CARDLEVELS
+	//the levels are on the card, and this is where this one lies in the file
+	uint32_t cardAt = 0;
+	const bool level = CardLevelAt(levelPack, Level, &cardAt);
+#else
 	const uint8_t * level = level_data_files[levelPack][Level];
+#endif
 	//temporary: says what the load was asked for and what it found
 	LevelReader reader;
 	if (level)
 	{
+#if CARDLEVELS
+		LevelReaderInitCard(&reader, cardAt);
+#else
 		LevelReaderInit(&reader, level);
+#endif
 		while (LevelReaderNext(&reader, &Type, &X, &Y))
 		{
 			if (X < minx)
@@ -388,13 +477,16 @@ void CWorldParts_Load(CWorldParts* self, uint8_t levelPack, uint8_t Level)
 				maxy = Y;
 		}
 	}
-	level = level_data_files[levelPack][Level];
 	if (level)
 	{
 		self->DisableSorting = true;
 			
 		//read again from the start, the planes give their parts once each
+#if CARDLEVELS
+		LevelReaderInitCard(&reader, cardAt);
+#else
 		LevelReaderInit(&reader, level);
+#endif
 		while (LevelReaderNext(&reader, &Type, &X, &Y))
 		{
 			X -= minx;
