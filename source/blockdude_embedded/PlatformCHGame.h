@@ -32,6 +32,36 @@
 //for 0 (straight to the display) or a 1 bpp buffer, which is 2048 bytes. An 8 bpp buffer would be
 //16384 of the 20464 and leave nothing for the stack, the heap and the SD card, so it is not
 //offered. A build can still set this itself
+//There is a card slot on this board, and this device reads its art off it rather than carrying
+//it in flash: every skin in full RGB565 instead of the one reduced skin that fits. See CARDIMAGES
+//in defines.h and the card file tools/mkcard.py writes.
+//Set here and not only by the build, so the Arduino IDE builds the same thing; -DCARDIMAGES=0
+//builds the old flash version. It has to be settled here, before the switches below that ask it
+#ifndef CARDIMAGES
+#define CARDIMAGES 1
+#endif
+//Only such a build, because saying so is what pulls the reader in (CHSd, see the card section of
+//PlatformCHGame.cpp): a flash build needs no library installed
+#if CARDIMAGES
+#define PLATFORM_HAS_CARD 1
+
+//No arena: every row of art is read off the card as it is drawn and none of it is kept.
+//An arena is static, so it comes out of the same 18416 bytes the heap does, and this game has
+//none to give. Its pool is MAXWORLDPARTS parts of a level and its strip buffer is a whole cell
+//row (128 by 16 pixels, 4096 bytes), which together come to about 14200 bytes; the flash build
+//runs with 228 bytes of heap left over. Packing CWorldPart from 32 bytes to 28 (see
+//CWorldPart.h) is what made even this fit, and leaving the run length index tables out of a
+//card build (see BgOffset in CWorldParts.cpp) handed back a few hundred more, so what is free
+//in a level is about 770 bytes.
+//512 of arena was measured against none: 3.89 frames a second against 3.78 while the whole
+//screen repaints, for half the margin. The board is drawn from two dozen different sheets and
+//a few hundred bytes hold four of them, so there is little to win here. What a card build
+//does win is that a tile is read whole in one card read, see BandSprite
+#ifndef CARDARENA
+#define CARDARENA 0
+#endif
+#endif
+
 #ifndef SCREENBUFFER
 #define SCREENBUFFER 0
 #endif
@@ -48,7 +78,9 @@
 //FORCESKIN in defines.h. The black & white skin is the one that is taken: its pictures are
 //packed one bit a pixel rather than kept as RGB565, which is what makes the game fit at all.
 //A 1 bpp buffer picks that skin itself, and a build can still ask for another one
-#if !defined(FORCESKIN) && (SCREENBUFFER != 1)
+//A card build names no skin: every one of them is on the card in full RGB565 and the game is
+//asked for one while it runs, see CardImages_UseSkin
+#if !defined(FORCESKIN) && (SCREENBUFFER != 1) && !CARDIMAGES
 #define FORCESKIN SKINBLACKWHITE
 #endif
 

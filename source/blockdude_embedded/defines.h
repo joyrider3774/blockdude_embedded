@@ -5,6 +5,28 @@
 //PlatformESPboy.h / PlatformSDL.h
 #include "PlatformDevice.h"
 
+//1 = the art is read from a card while the game runs and none of it is in flash, see
+//cardimages.h. It needs a device that can read one (PLATFORM_HAS_CARD in Platform.h) and the
+//card file tools/mkcard.py writes. Every skin is then on the card in full RGB565 and the game
+//can be asked for any of them, which is what flash could never hold: this game has five skins
+#ifndef CARDIMAGES
+#define CARDIMAGES 0
+#endif
+
+//How much RAM a card build keeps its art in. A picture small enough to be worth it is read once
+//and kept here, so drawing it again is a copy; a full screen one is read a row or a strip at a
+//time and never kept. 0 is no arena at all. See the arena in cardimages.cpp
+#ifndef CARDARENA
+#define CARDARENA 2048
+#endif
+
+//1 = the full screen background is drawn as one plain colour instead of as a picture, for a
+//skin whose background is one colour a row. Off here: of this game's five skins only Kenney
+//and Ti-83 are like that, the Default, Tech and Flat ones have a real picture behind the board
+#ifndef FLATBACKGROUND
+#define FLATBACKGROUND 0
+#endif
+
 #define FRAMERATE 30
 //1 = every frame waits until 1/FRAMERATE of a second has passed, 0 = a frame starts as soon
 //as the last one is done, to see how fast the game can go. Movement, animation, input
@@ -47,8 +69,10 @@
 //black & white skin is the one it takes on its own. A build can still ask it for another one,
 //whose shades then go through the brightness rule in SetBufferBit, and with DITHERING come out
 //as a pattern of the two colours rather than as the nearer of them. Set by the device header or the build
+//A card build names no skin either: every one of them is on the card in full RGB565 and the
+//game is asked for one while it runs, see CardImages_UseSkin
 #if !defined(FORCESKIN)
-  #if SCREENBUFFER == 1
+  #if (SCREENBUFFER == 1) && !CARDIMAGES
   #define FORCESKIN SKINBLACKWHITE
   #else
   #define FORCESKIN -1
@@ -65,7 +89,9 @@
 //shows two colours, and keeping each of them in sixteen bits costs both flash and the work
 //of writing a colour per pixel. Every skin can be in the build here and picked in the
 //options, so which kind a picture is cannot be known at build time: skinImagesOneBit says
-#define ONEBITIMAGES SKINBUILT(SKINBLACKWHITE)
+//A card build has none of them: every skin is on the card in full RGB565, so there is no
+//reduced form to read and nothing of the one bit paths is built
+#define ONEBITIMAGES (!CARDIMAGES && SKINBUILT(SKINBLACKWHITE))
 
 //1 when the black & white skin is the only one in the build. Every picture is then one bit a pixel
 //and the paths that read RGB565 are dead: a build that is only ever going to draw one bit pictures

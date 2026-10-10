@@ -27,16 +27,38 @@ struct CWorldPart {
 	int16_t PrevDrawY;
 	//playfield positions (0 .. NrOfCols-1 / NrOfRows-1, -1 = none)
 	int8_t PlayFieldX, PlayFieldY;
-	//speeds / increments are +- GameMoveSpeed, delay counter goes negative (-TileWidth / MoveSpeed)
-	int8_t MoveSpeed, MoveDelay, MoveDelayCounter, Xi, Yi;
-	//IDxxx (max 26) and Groupxxx (max 10)
-	uint8_t Type, Group;
-	uint8_t AnimCounter, AnimBase, AnimDelay, AnimDelayCounter, AnimPhases;
-	//The two phases reach AnimBaseRightJump + AnimPhases - 1, which is 15, so four bits hold one,
-	//and the four flags take a bit each: six bytes of fields in two. The struct has pointers in it
-	//so its size is rounded to four, and packing only the flags would have been padded straight
-	//back to 36; going to 32 takes 4 bytes off every part, and the pool holds one per part of a
-	//level. See MAXWORLDPARTS
+
+	//Everything below is a small counter, an id or a speed, and each is given the bits its range
+	//needs rather than a byte of its own. The pool holds one of these per part of a level
+	//(MAXWORLDPARTS of them, which on a CHGame is the busiest level of the packs in the build),
+	//so what one part costs is multiplied by a few hundred: this takes the part from 32 bytes to
+	//28. The range of each is in the comment beside it and is checked below; a value that
+	//outgrew its field would be cut silently, so a field is widened before it is given a larger
+	//one anywhere
+	//IDxxx, 0 .. IDRoofDownLeft (26)
+	uint8_t Type : 5;
+	//Groupxxx, 0 .. GroupNone (10)
+	uint8_t Group : 4;
+	//0 or GameMoveSpeed (2 or 3, see IMAGESET)
+	uint8_t MoveSpeed : 2;
+	//always 0, and kept because the move delay is counted against it
+	uint8_t MoveDelay : 2;
+	//counts up from -(TileWidth / MoveSpeed), so -16 at the slowest
+	int8_t MoveDelayCounter : 6;
+	//+- MoveSpeed while moving
+	int8_t Xi : 3;
+	int8_t Yi : 3;
+	//AnimBaseLeft (0), AnimBaseRight (4), AnimBaseLeftJump (8) or AnimBaseRightJump (12)
+	uint8_t AnimBase : 4;
+	//0, 1 or 4
+	uint8_t AnimPhases : 3;
+	//0 .. AnimPhases, counted up until it equals AnimPhases so it holds that too
+	uint8_t AnimCounter : 3;
+	//0 or PlayerAnimDelay (4 or 5, see IMAGESET)
+	uint8_t AnimDelay : 3;
+	//0 .. AnimDelay
+	uint8_t AnimDelayCounter : 3;
+	//The two phases reach AnimBaseRightJump + AnimPhases - 1, which is 15, so four bits hold one
 	uint8_t AnimPhase : 4;
 	uint8_t PrevDrawAnimPhase : 4;
 	uint8_t FirstArriveEventFired : 1;
@@ -44,6 +66,17 @@ struct CWorldPart {
 	uint8_t NeedToMoveLeft : 1;
 	uint8_t NeedToMoveRight : 1;
 };
+
+//What the fields above are sized for. A device header that raises any of these has to widen the
+//field with it, which is why they are checked here rather than left to be noticed
+static_assert(IDRoofDownLeft <= 31, "Type does not fit its five bits");
+static_assert(GroupNone <= 15, "Group does not fit its four bits");
+static_assert(GameMoveSpeed <= 3, "MoveSpeed does not fit its two bits, nor Xi / Yi theirs");
+static_assert(TileWidth / GameMoveSpeed <= 31, "MoveDelayCounter does not fit its six bits");
+static_assert(AnimBaseRightJump <= 15, "AnimBase does not fit its four bits");
+static_assert(PlayerAnimDelay <= 7, "AnimDelay does not fit its three bits");
+static_assert(AnimBaseRightJump + 4 - 1 <= 15, "AnimPhase does not fit its four bits");
+static_assert(sizeof(struct CWorldPart) <= 28, "the part grew, the pool is MAXWORLDPARTS of it");
 
 //every part lives in this pool (MAXWORLDPARTS parts), the positional grid in CWorldParts keeps its index.
 //It is NULL until CWorldPart_PoolInit, CWorldParts_Create and CWorldParts_deinit take care of it

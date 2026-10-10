@@ -5,6 +5,8 @@
 #include "cworldparts.h"
 //the strips hold pictures of the black & white skin too, and those are one bit a pixel
 #include "onebitimage.h"
+//the strips hold pictures read off a card too, for a build with CARDIMAGES on
+#include "cardimages.h"
 #include "cworldpart.h"
 #include "commonvars.h"
 #include "levels.h"
@@ -718,12 +720,14 @@ static void DrawBuffersInit()
 	bandBuf = (uint16_t*)malloc(WINDOW_WIDTH * BANDHEIGHT * sizeof(uint16_t));
 	//partStrip only saves the strip loop work, so it is not one of the ones below that have to be there
 	partStrip = (uint8_t*)malloc(MAXWORLDPARTS);
-#if !ONEBITONLY
+#if !ONEBITONLY && !CARDIMAGES
+	//the row table a run length encoded background is read through. Nothing on the card is
+	//encoded, so a card build never looks at one and need not pay for it
 	bgRowOffset = (BgOffset*)malloc(WINDOW_HEIGHT * sizeof(BgOffset));
 	bgRowUsed = (uint8_t*)malloc(WINDOW_HEIGHT * sizeof(uint8_t));
 #endif
 	if (!cellDirty || !bandBuf
-#if !ONEBITONLY
+#if !ONEBITONLY && !CARDIMAGES
 	    || !bgRowOffset || !bgRowUsed
 #endif
 	   )
@@ -847,6 +851,16 @@ static void BandBackground()
 			bandBuf[i] = ColorWhite;
 		return;
 	}
+#if CARDIMAGES
+	//The strip is the part of a full screen picture that lands in it. The rows of a picture lie
+	//together in the file, so the whole strip is asked for in one read rather than a row at a
+	//time: this game's backgrounds are real pictures and cannot be stood in for by a colour,
+	//see FLATBACKGROUND in defines.h
+	if (!CardImages_Rows(IMGBackground, bandX0, bandY0, bandW, BANDHEIGHT, bandBuf))
+		for (uint16_t i = 0; i < bandW * BANDHEIGHT; i++)
+			bandBuf[i] = ColorWhite;
+	return;
+#endif
 	//a new skin brings a new background
 #if ONEBITIMAGES
 	if (skinImagesOneBit)
@@ -961,6 +975,48 @@ static void BandSprite(int16_t sx, int16_t sy, const uint8_t* image, uint8_t fra
 	if (r1 > TileHeight) r1 = TileHeight;
 	if (c0 < 0) c0 = 0;
 	if (c1 > TileWidth) c1 = TileWidth;
+#if CARDIMAGES
+	//The sheet is on the card and its frames are stacked down it, so the rows this frame covers
+	//start that many tiles down - there is no pointer to step, see CWorldPart_SpriteData
+	{
+		const int16_t cols = c1 - c0;
+		//A sheet small enough to be kept whole sits in RAM, and its rows are copied out of it
+		//exactly as a flash build copies them out of flash: a word at a time, see BandCopyKeyed
+		const uint8_t* px = CardImages_Cached(image);
+		if (px)
+		{
+			for (int16_t r = r0; r < r1; r++)
+			{
+				uint16_t* drow = &bandBuf[(sy + r - bandY0) * bandW + (sx + c0 - bandX0)];
+				const uint8_t* src = px + (((frame * TileHeight + r) * TileWidth) + c0) * sizeof(uint16_t);
+				BandCopyKeyed(drow, src, cols);
+			}
+			return;
+		}
+		//Not kept, so it comes off the card. A sheet is one tile wide, so a tile that is not
+		//clipped at the sides is a run of whole rows and the whole of it is one read: a row at
+		//a time was eight reads a tile and a screen of them is thousands a frame
+		uint16_t tile[TileWidth * TileHeight];
+		const bool whole = (c0 == 0) && (cols == TileWidth) &&
+		                   (CardImages_Width(image) == TileWidth);
+		if (whole && !CardImages_Rows(image, 0, frame * TileHeight + r0, TileWidth, r1 - r0, tile))
+			return;
+		for (int16_t r = r0; r < r1; r++)
+		{
+			uint16_t* drow = &bandBuf[(sy + r - bandY0) * bandW + (sx + c0 - bandX0)];
+			const uint16_t* row = tile + (size_t)(r - r0) * TileWidth;
+			if (!whole && !CardImages_Row(image, c0, frame * TileHeight + r, cols, tile))
+				continue;
+			if (!whole)
+				row = tile;
+			for (int16_t c = 0; c < cols; c++)
+				//magenta is the transparent key, 0xF81F in RGB565
+				if (row[c] != 0xF81F)
+					drow[c] = row[c];
+		}
+	}
+	return;
+#endif
 #if ONEBITIMAGES
 	if (skinImagesOneBit)
 	{
@@ -1086,8 +1142,15 @@ bool CWorldParts_DrawBoard(CWorldParts* self)
 		if (!cellDirty[cy])
 			continue;
 
+		//THE BUS RULE: where the art is read off a card, nothing of the panel's may be open
+		//while a strip is being composed. On a CHGame the card shares SPI1 with the display and
+		//reading it takes the bus over, so a window opened here would be left half filled and
+		//the display would never come back. The strip is composed first and the window opened
+		//around the push alone, see the push below
+#if !CARDIMAGES
 		if (!painted)
 			SCREEN.startWrite();
+#endif
 
 		//the run from the first to the last dirty cell of the row goes out as one
 		int16_t first = -1, last = -1;
@@ -1103,8 +1166,10 @@ bool CWorldParts_DrawBoard(CWorldParts* self)
 		bandX0 = first * TileWidth;
 		bandW = (last - first + 1) * TileWidth;
 
+#if !CARDIMAGES
 		//one window for the whole row, the halves are streamed into it in order
 		SCREEN.setAddrWindow(bandX0, cy * TileHeight, bandW, TileHeight);
+#endif
 
 		bandY0 = cy * TileHeight;
 
@@ -1147,6 +1212,11 @@ bool CWorldParts_DrawBoard(CWorldParts* self)
 		bandSpriteUs += Platform_Micros() - tSection;
 #endif
 
+#if CARDIMAGES
+		//the strip is composed and the card is done with, so the panel can have the bus
+		SCREEN.startWrite();
+		SCREEN.setAddrWindow(bandX0, cy * TileHeight, bandW, TileHeight);
+#endif
 #if LOVYANGFX
 		//true: bandBuf holds plain RGB565, the library puts it in display order.
 		//LovyanGFX's pushPixels would open a transaction of its own every call
@@ -1154,14 +1224,19 @@ bool CWorldParts_DrawBoard(CWorldParts* self)
 #else
 		SCREEN.pushPixels(bandBuf, bandW * BANDHEIGHT);
 #endif
+#if CARDIMAGES
+		SCREEN.endWrite();
+#endif
 		painted = true;
 #if CHGAME_TIMING
 		dbgStrips++;
 #endif
 	}
 
+#if !CARDIMAGES
 	if (painted)
 		SCREEN.endWrite();
+#endif
 
 	return painted;
 }
