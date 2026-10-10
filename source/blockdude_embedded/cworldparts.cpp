@@ -893,6 +893,12 @@ static void IndexBackground()
 }
 #endif
 
+//Screen columns of the strip that an opaque tile will cover completely, per row of the strip.
+//Those pixels of the background are never seen, so they are not drawn - and on a card build
+//they are not even read, which is what a full screen background costs most of. covX1 <= covX0
+//means nothing is covered
+static int16_t covX0[BANDHEIGHT], covX1[BANDHEIGHT];
+
 //the background is a full screen image so it lines up with the strip
 #if ONEBITIMAGES
 //The same, for a background packed one bit a pixel. There is no index to build: every row of such
@@ -941,11 +947,6 @@ static PLATFORM_HOT_CODE void BandBackgroundOneBit()
 }
 #endif
 
-//Screen columns of the strip that an opaque tile will cover completely, per row of the strip.
-//Those pixels of the background are never seen, so they are not drawn - and on a card build
-//they are not even read, which is what a full screen background costs most of. covX1 <= covX0
-//means nothing is covered
-static int16_t covX0[BANDHEIGHT], covX1[BANDHEIGHT];
 //1 while any row of this strip has something covered, so the cheap whole strip read is still
 //taken when a strip is clear
 static bool covAny = false;
