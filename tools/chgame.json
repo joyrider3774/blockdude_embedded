@@ -1,0 +1,12 @@
+{
+  "id": "blockdude",
+  "title": "BLOCKDUDE",
+  "author": "Willems Davy",
+  "version": "1.0",
+  "description": "Blokdude is a remake of the well known TI Caluculator game from Brandon Sterner as well as the blockman game from Soleau Software",
+  "genre": "Puzzle",
+  "license": "MIT",
+  "url": "https://github.com/joyrider3774/blockdude_embedded",
+  "sourceUrl": "https://github.com/joyrider3774/blockdude_embedded",
+  "sdcard": "sdcard"
+}
